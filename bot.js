@@ -15,10 +15,11 @@ const client = new Client({
 // Game state
 let currentGame = {
   word: null,
-  guesses: new Map(), // userId -> {guess, result}
+  guesses: new Map(), // userId -> {guess, result, timestamp}
   date: null,
   winners: new Set(),
   isActive: false,
+  lastGuessTime: null, // Track when the last guess was made
 };
 
 // Load word list
@@ -95,12 +96,19 @@ function startNewGame() {
     return false;
   }
 
+  // If there's an old game from yesterday, end it first
+  if (currentGame.isActive && currentGame.date !== today) {
+    console.log("Ending previous day game to start new one");
+    endGame();
+  }
+
   currentGame = {
     word: getRandomWord(),
     guesses: new Map(),
     date: today,
     winners: new Set(),
     isActive: true,
+    lastGuessTime: null,
   };
 
   console.log(`New game started! Word: ${currentGame.word}`);
@@ -171,10 +179,30 @@ client.on("messageCreate", async (message) => {
     }
 
     const userId = message.author.id;
+    const now = new Date();
+    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000); // 2 hours in milliseconds
 
+    // Check if player already guessed
     if (currentGame.guesses.has(userId)) {
-      message.reply("❌ You already made your guess for today!");
-      return;
+      // Allow re-guess if no one has guessed in the last 2 hours
+      if (
+        currentGame.lastGuessTime &&
+        currentGame.lastGuessTime > twoHoursAgo
+      ) {
+        message.reply(
+          "❌ You already made your guess for today! You can guess again if no one guesses for 2 hours."
+        );
+        return;
+      } else {
+        // Remove their old guess to allow a new one
+        currentGame.guesses.delete(userId);
+        if (currentGame.winners.has(userId)) {
+          currentGame.winners.delete(userId);
+        }
+        message.reply(
+          "⏰ 2 hours have passed with no new guesses - you can try again!"
+        );
+      }
     }
 
     // Process the guess
@@ -185,7 +213,10 @@ client.on("messageCreate", async (message) => {
       currentGame.winners.add(userId);
     }
 
-    currentGame.guesses.set(userId, { guess, result, isWinner });
+    // Store guess with timestamp and update last guess time
+    const timestamp = new Date();
+    currentGame.guesses.set(userId, { guess, result, isWinner, timestamp });
+    currentGame.lastGuessTime = timestamp;
 
     // Send result
     const embed = new EmbedBuilder()
@@ -198,6 +229,44 @@ client.on("messageCreate", async (message) => {
 
     message.reply({ embeds: [embed] });
 
+    return;
+  }
+
+  // Show time until re-guess is allowed
+  if (content === "!wordle-time") {
+    if (!currentGame.isActive) {
+      message.reply(
+        "❌ No active game! Wait for the daily game at 9 AM or use `!start-wordle` to start one manually."
+      );
+      return;
+    }
+
+    if (!currentGame.lastGuessTime) {
+      message.reply(
+        "⏰ No guesses yet today - everyone can still make their first guess!"
+      );
+      return;
+    }
+
+    const now = new Date();
+    const twoHoursFromLastGuess = new Date(
+      currentGame.lastGuessTime.getTime() + 2 * 60 * 60 * 1000
+    );
+    const timeLeft = twoHoursFromLastGuess - now;
+
+    if (timeLeft <= 0) {
+      message.reply(
+        "✅ 2 hours have passed! Players who already guessed can try again."
+      );
+    } else {
+      const hoursLeft = Math.floor(timeLeft / (60 * 60 * 1000));
+      const minutesLeft = Math.floor(
+        (timeLeft % (60 * 60 * 1000)) / (60 * 1000)
+      );
+      message.reply(
+        `⏳ ${hoursLeft}h ${minutesLeft}m until re-guessing is allowed.`
+      );
+    }
     return;
   }
 
@@ -285,12 +354,18 @@ client.on("messageCreate", async (message) => {
       .addFields(
         {
           name: "!guess WORD",
-          value: "Make your guess (5 letters, one guess per day)",
+          value:
+            "Make your guess (5 letters, can re-guess after 2h of no activity)",
           inline: false,
         },
         {
           name: "!wordle-status",
           value: "Show current game status and all guesses",
+          inline: false,
+        },
+        {
+          name: "!wordle-time",
+          value: "Check time until re-guessing is allowed",
           inline: false,
         },
         {
