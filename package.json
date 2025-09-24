@@ -1,0 +1,23 @@
+{
+  "name": "grouple-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for daily group Wordle games",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node bot.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "wordle",
+    "game"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.13.0",
+    "dotenv": "^16.3.1",
+    "node-cron": "^3.0.2"
+  }
+}
