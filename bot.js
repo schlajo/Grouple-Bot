@@ -9,6 +9,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages,
   ],
 });
 
@@ -21,6 +22,9 @@ let currentGame = {
   isActive: false,
   lastGuessTime: null, // Track when the last guess was made
 };
+
+// Pending host requests
+let pendingHosts = new Map(); // userId -> {channelId, timestamp}
 
 // Load word list
 let wordList = [];
@@ -88,7 +92,7 @@ function formatGuessResult(guess, result, isWinner) {
   return `${emoji}**${letters}**\n${result}`;
 }
 
-function startNewGame() {
+function startNewGame(customWord = null) {
   const today = new Date().toDateString();
 
   // Don't start a new game if one is already active for today
@@ -103,15 +107,21 @@ function startNewGame() {
   }
 
   currentGame = {
-    word: getRandomWord(),
+    word: customWord ? customWord.toUpperCase() : getRandomWord(),
     guesses: new Map(),
     date: today,
     winners: new Set(),
     isActive: true,
     lastGuessTime: null,
+    isCustomWord: !!customWord,
+    host: customWord ? null : null, // Will be set by the host command
   };
 
-  console.log(`New game started! Word: ${currentGame.word}`);
+  console.log(
+    `New game started! ${
+      customWord ? "(Custom word set)" : `Word: ${currentGame.word} (Random)`
+    }`
+  );
   return true;
 }
 
@@ -129,6 +139,66 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   const content = message.content.toLowerCase();
+
+  // Handle DM responses for custom word hosting
+  if (message.guild === null) {
+    // DM channel (more reliable than checking type)
+    console.log(
+      `DM received from ${message.author.username}: "${message.content}"`
+    );
+    const userId = message.author.id;
+
+    if (pendingHosts.has(userId)) {
+      console.log(`Processing custom word from ${message.author.username}`);
+      const customWord = message.content.toUpperCase().trim();
+
+      // Validate the word
+      if (customWord.length !== 5) {
+        message.reply("❌ Word must be exactly 5 letters! Try again.");
+        return;
+      }
+
+      if (!/^[A-Z]+$/.test(customWord)) {
+        message.reply("❌ Word must contain only letters! Try again.");
+        return;
+      }
+
+      // Get the original channel
+      const hostData = pendingHosts.get(userId);
+      const channel = client.channels.cache.get(hostData.channelId);
+
+      if (channel && startNewGame(customWord)) {
+        // Store the host information
+        currentGame.host = userId;
+
+        const embed = new EmbedBuilder()
+          .setColor(0xffd700)
+          .setTitle("🎯 Custom Wordle Challenge!")
+          .setDescription(
+            `${message.author.username} has chosen a word for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
+          )
+          .addFields(
+            { name: "Word Pattern", value: "_ _ _ _ _", inline: true },
+            { name: "Host", value: message.author.username, inline: true }
+          )
+          .setFooter({ text: "Good luck everyone! 🍀" });
+
+        channel.send({ embeds: [embed] });
+        message.reply(
+          "✅ Your custom Wordle game has been started in the server! Good luck to everyone!"
+        );
+
+        // Clear the pending request
+        pendingHosts.delete(userId);
+      } else {
+        message.reply(
+          "❌ Could not start the game. There might already be an active game today."
+        );
+        pendingHosts.delete(userId);
+      }
+      return;
+    }
+  }
 
   // Manual start command (for testing or manual games)
   if (content === "!start-wordle") {
@@ -152,8 +222,52 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // Host custom word command - Step 1: Request to host
+  if (content === "!host-wordle") {
+    console.log(`${message.author.username} wants to host a custom word game`);
+
+    if (currentGame.isActive) {
+      message.reply(
+        "❌ A game is already active for today! Use `!end-wordle` to end it first."
+      );
+      return;
+    }
+
+    // Store the pending host request
+    pendingHosts.set(message.author.id, {
+      channelId: message.channel.id,
+      timestamp: new Date(),
+    });
+    console.log(`Stored pending host request for ${message.author.username}`);
+
+    // DM the user asking for their word
+    try {
+      await message.author.send(
+        "🎯 **Host a Custom Wordle Game!**\n\nPlease reply with your 5-letter word. Make sure it's exactly 5 letters and contains only letters!\n\nExample: Just type `PIZZA`"
+      );
+      message.reply(
+        "📨 Check your DMs! I've sent you instructions for setting up your custom word."
+      );
+      console.log(`DM sent successfully to ${message.author.username}`);
+    } catch (error) {
+      console.log(`Failed to DM ${message.author.username}:`, error.message);
+      message.reply(
+        "❌ I couldn't send you a DM! Please enable DMs from server members and try again."
+      );
+      pendingHosts.delete(message.author.id);
+    }
+    return;
+  }
+
   // Guess command
   if (content.startsWith("!guess ")) {
+    // Check if we need to clean up an old game first
+    const today = new Date().toDateString();
+    if (currentGame.isActive && currentGame.date !== today) {
+      console.log("Auto-ending old game from previous day");
+      endGame();
+    }
+
     if (!currentGame.isActive) {
       message.reply(
         "❌ No active game! Wait for the daily game at 9 AM or use `!start-wordle` to start one manually."
@@ -272,6 +386,13 @@ client.on("messageCreate", async (message) => {
 
   // Show current game status
   if (content === "!wordle-status") {
+    // Check if we need to clean up an old game first
+    const today = new Date().toDateString();
+    if (currentGame.isActive && currentGame.date !== today) {
+      console.log("Auto-ending old game from previous day");
+      endGame();
+    }
+
     if (!currentGame.isActive) {
       message.reply(
         "❌ No active game! Wait for the daily game at 9 AM or use `!start-wordle` to start one manually."
@@ -369,8 +490,14 @@ client.on("messageCreate", async (message) => {
           inline: false,
         },
         {
+          name: "!host-wordle",
+          value:
+            "Host a game with your own word (bot will DM you for the word)",
+          inline: false,
+        },
+        {
           name: "!start-wordle",
-          value: "Start a new game manually (for testing)",
+          value: "Start a game with random word",
           inline: false,
         },
         {
@@ -434,7 +561,7 @@ cron.schedule(
   },
   {
     scheduled: true,
-    timezone: "America/New_York", // Change this to your timezone
+    timezone: "America/Chicago", // Central Time (St. Louis)
   }
 );
 
