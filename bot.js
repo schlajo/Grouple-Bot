@@ -258,7 +258,7 @@ client.on("messageCreate", async (message) => {
           .setColor(0xffd700)
           .setTitle("🎯 Custom Wordle Challenge!")
           .setDescription(
-            `${message.author.username} has chosen a word for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
+            `${message.author.username} has chosen a ${currentGame.word.length}-letter word for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
           )
           .addFields(
             {
@@ -294,7 +294,7 @@ client.on("messageCreate", async (message) => {
         .setColor(0x00ff00)
         .setTitle("🎯 Daily Wordle Challenge!")
         .setDescription(
-          "A new 5-letter word has been chosen!\n\nType `!guess WORD` to make your guess.\nEveryone gets ONE guess!"
+          `A new ${currentGame.word.length}-letter word has been chosen!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
         )
         .addFields(
           {
@@ -692,7 +692,7 @@ cron.schedule(
             .setColor(0x00ff00)
             .setTitle("🌅 Good Morning! Daily Wordle Time!")
             .setDescription(
-              "A new 5-letter word has been chosen for today!\n\nType `!guess WORD` to make your guess.\nEveryone gets ONE guess!"
+              `A new ${currentGame.word.length}-letter word has been chosen for today!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
             )
             .addFields(
               {
