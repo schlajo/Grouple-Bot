@@ -26,6 +26,65 @@ let currentGame = {
 // Pending host requests
 let pendingHosts = new Map(); // userId -> {channelId, timestamp}
 
+// Persistence functions
+function saveGameState() {
+  if (currentGame.isActive) {
+    const gameData = {
+      word: currentGame.word,
+      guesses: Array.from(currentGame.guesses.entries()),
+      date: currentGame.date,
+      winners: Array.from(currentGame.winners),
+      isActive: currentGame.isActive,
+      lastGuessTime: currentGame.lastGuessTime,
+      isCustomWord: currentGame.isCustomWord,
+      host: currentGame.host,
+    };
+
+    try {
+      fs.writeFileSync("game-state.json", JSON.stringify(gameData, null, 2));
+      console.log("Game state saved successfully");
+    } catch (error) {
+      console.error("Error saving game state:", error);
+    }
+  }
+}
+
+function loadGameState() {
+  try {
+    if (fs.existsSync("game-state.json")) {
+      const gameData = JSON.parse(fs.readFileSync("game-state.json", "utf8"));
+
+      // Check if the saved game is from today
+      const today = new Date().toDateString();
+      if (gameData.date === today && gameData.isActive) {
+        currentGame = {
+          word: gameData.word,
+          guesses: new Map(gameData.guesses),
+          date: gameData.date,
+          winners: new Set(gameData.winners),
+          isActive: gameData.isActive,
+          lastGuessTime: gameData.lastGuessTime
+            ? new Date(gameData.lastGuessTime)
+            : null,
+          isCustomWord: gameData.isCustomWord,
+          host: gameData.host,
+        };
+
+        console.log(
+          `Game state restored: ${currentGame.word} (${currentGame.guesses.size} guesses)`
+        );
+        return true;
+      } else {
+        console.log("Old game state found, clearing...");
+        fs.unlinkSync("game-state.json");
+      }
+    }
+  } catch (error) {
+    console.error("Error loading game state:", error);
+  }
+  return false;
+}
+
 // Load word list
 let wordList = [];
 try {
@@ -58,10 +117,11 @@ function compareGuess(guess, target) {
   const result = [];
   const targetLetters = target.split("");
   const guessLetters = guess.split("");
+  const wordLength = target.length;
 
   // First pass: mark correct positions
   const targetCounts = {};
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < wordLength; i++) {
     if (guessLetters[i] === targetLetters[i]) {
       result[i] = "🟩"; // Green - correct position
     } else {
@@ -72,7 +132,7 @@ function compareGuess(guess, target) {
   }
 
   // Second pass: mark wrong positions and misses
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < wordLength; i++) {
     if (result[i] === null) {
       if (targetCounts[guessLetters[i]] && targetCounts[guessLetters[i]] > 0) {
         result[i] = "🟨"; // Yellow - wrong position
@@ -87,7 +147,7 @@ function compareGuess(guess, target) {
 }
 
 function formatGuessResult(guess, result, isWinner) {
-  const letters = guess.split("").join("  "); // Double space to spread across all 5 boxes
+  const letters = guess.split("").join("  "); // Double space to spread across all boxes
   const emoji = isWinner ? "🏆 " : "";
   return `${emoji}**${letters}**\n${result}`;
 }
@@ -122,17 +182,37 @@ function startNewGame(customWord = null) {
       customWord ? "(Custom word set)" : `Word: ${currentGame.word} (Random)`
     }`
   );
+
+  // Save game state
+  saveGameState();
   return true;
 }
 
 function endGame() {
   currentGame.isActive = false;
+
+  // Clear saved game state
+  try {
+    if (fs.existsSync("game-state.json")) {
+      fs.unlinkSync("game-state.json");
+      console.log("Game state cleared");
+    }
+  } catch (error) {
+    console.error("Error clearing game state:", error);
+  }
 }
 
 // Bot events
 client.once("clientReady", () => {
   console.log(`🎯 ${client.user.tag} is ready for Wordle!`);
-  console.log("Bot is online and waiting for 9 AM or commands...");
+
+  // Try to restore game state on startup
+  const gameRestored = loadGameState();
+  if (gameRestored) {
+    console.log("Game restored from previous session!");
+  } else {
+    console.log("No active game found, waiting for 9 AM or commands...");
+  }
 });
 
 client.on("messageCreate", async (message) => {
@@ -153,8 +233,8 @@ client.on("messageCreate", async (message) => {
       const customWord = message.content.toUpperCase().trim();
 
       // Validate the word
-      if (customWord.length !== 5) {
-        message.reply("❌ Word must be exactly 5 letters! Try again.");
+      if (customWord.length < 3 || customWord.length > 10) {
+        message.reply("❌ Word must be 3-10 letters long! Try again.");
         return;
       }
 
@@ -171,6 +251,9 @@ client.on("messageCreate", async (message) => {
         // Store the host information
         currentGame.host = userId;
 
+        // Save game state after setting host
+        saveGameState();
+
         const embed = new EmbedBuilder()
           .setColor(0xffd700)
           .setTitle("🎯 Custom Wordle Challenge!")
@@ -178,7 +261,11 @@ client.on("messageCreate", async (message) => {
             `${message.author.username} has chosen a word for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
           )
           .addFields(
-            { name: "Word Pattern", value: "_ _ _ _ _", inline: true },
+            {
+              name: "Word Pattern",
+              value: "_ ".repeat(currentGame.word.length).trim(),
+              inline: true,
+            },
             { name: "Host", value: message.author.username, inline: true }
           )
           .setFooter({ text: "Good luck everyone! 🍀" });
@@ -210,7 +297,11 @@ client.on("messageCreate", async (message) => {
           "A new 5-letter word has been chosen!\n\nType `!guess WORD` to make your guess.\nEveryone gets ONE guess!"
         )
         .addFields(
-          { name: "Word Pattern", value: "_ _ _ _ _", inline: true },
+          {
+            name: "Word Pattern",
+            value: "_ ".repeat(currentGame.word.length).trim(),
+            inline: true,
+          },
           { name: "Players", value: "Waiting for guesses...", inline: true }
         )
         .setFooter({ text: "Good luck everyone! 🍀" });
@@ -243,7 +334,7 @@ client.on("messageCreate", async (message) => {
     // DM the user asking for their word
     try {
       await message.author.send(
-        "🎯 **Host a Custom Wordle Game!**\n\nPlease reply with your 5-letter word. Make sure it's exactly 5 letters and contains only letters!\n\nExample: Just type `PIZZA`"
+        "🎯 **Host a Custom Wordle Game!**\n\nPlease reply with your word (3-10 letters). Make sure it contains only letters!\n\nExamples:\n• `CAT` (3 letters)\n• `PIZZA` (5 letters)\n• `ELEPHANT` (8 letters)"
       );
       message.reply(
         "📨 Check your DMs! I've sent you instructions for setting up your custom word."
@@ -282,8 +373,10 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    if (guess.length !== 5) {
-      message.reply("❌ Word must be exactly 5 letters!");
+    if (guess.length !== currentGame.word.length) {
+      message.reply(
+        `❌ Word must be exactly ${currentGame.word.length} letters!`
+      );
       return;
     }
 
@@ -316,6 +409,9 @@ client.on("messageCreate", async (message) => {
         message.reply(
           "⏰ 2 hours have passed with no new guesses - you can try again!"
         );
+
+        // Save game state after removing old guess
+        saveGameState();
       }
     }
 
@@ -332,6 +428,9 @@ client.on("messageCreate", async (message) => {
     currentGame.guesses.set(userId, { guess, result, isWinner, timestamp });
     currentGame.lastGuessTime = timestamp;
 
+    // Save game state after each guess
+    saveGameState();
+
     // Send result
     const embed = new EmbedBuilder()
       .setColor(isWinner ? 0xffd700 : 0x0099ff)
@@ -342,6 +441,53 @@ client.on("messageCreate", async (message) => {
       });
 
     message.reply({ embeds: [embed] });
+
+    // Auto-end game if someone wins
+    if (isWinner) {
+      // Wait a moment for the winner message to be seen, then end game
+      setTimeout(async () => {
+        let description = `**The word was: ${currentGame.word}**\n\n`;
+
+        if (currentGame.winners.size > 0) {
+          description += "🏆 **Winners:**\n";
+          for (const winnerId of currentGame.winners) {
+            try {
+              const user = await client.users.fetch(winnerId);
+              description += `• ${user.username}\n`;
+            } catch (error) {
+              console.error("Error fetching winner:", error);
+            }
+          }
+        }
+
+        if (currentGame.guesses.size > 0) {
+          description += "\n**All Guesses:**\n";
+          for (const [userId, data] of currentGame.guesses) {
+            try {
+              const user = await client.users.fetch(userId);
+              description += `${user.username}: ${formatGuessResult(
+                data.guess,
+                data.result,
+                data.isWinner
+              )}\n`;
+            } catch (error) {
+              console.error("Error fetching user:", error);
+            }
+          }
+        }
+
+        const endEmbed = new EmbedBuilder()
+          .setColor(0xff6b6b)
+          .setTitle("🎯 Game Over!")
+          .setDescription(description)
+          .setFooter({
+            text: "Game ended automatically! Use !start-wordle for a new game.",
+          });
+
+        message.channel.send({ embeds: [endEmbed] });
+        endGame();
+      }, 2000); // 2 second delay
+    }
 
     return;
   }
@@ -400,7 +546,9 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    let description = `**Word Pattern:** _ _ _ _ _\n**Players:** ${currentGame.guesses.size}\n\n`;
+    let description = `**Word Pattern:** ${"_ "
+      .repeat(currentGame.word.length)
+      .trim()}\n**Players:** ${currentGame.guesses.size}\n\n`;
 
     if (currentGame.guesses.size > 0) {
       description += "**Guesses:**\n";
@@ -476,7 +624,7 @@ client.on("messageCreate", async (message) => {
         {
           name: "!guess WORD",
           value:
-            "Make your guess (5 letters, can re-guess after 2h of no activity)",
+            "Make your guess (length matches current word, can re-guess after 2h of no activity)",
           inline: false,
         },
         {
@@ -492,7 +640,7 @@ client.on("messageCreate", async (message) => {
         {
           name: "!host-wordle",
           value:
-            "Host a game with your own word (bot will DM you for the word)",
+            "Host a game with your own word (3-10 letters, bot will DM you for the word)",
           inline: false,
         },
         {
@@ -547,7 +695,11 @@ cron.schedule(
               "A new 5-letter word has been chosen for today!\n\nType `!guess WORD` to make your guess.\nEveryone gets ONE guess!"
             )
             .addFields(
-              { name: "Word Pattern", value: "_ _ _ _ _", inline: true },
+              {
+                name: "Word Pattern",
+                value: "_ ".repeat(currentGame.word.length).trim(),
+                inline: true,
+              },
               { name: "Time Left", value: "All day!", inline: true }
             )
             .setFooter({
@@ -609,7 +761,7 @@ cron.schedule("59 23 * * *", async () => {
       }
     });
 
-    endGame();
+    endGame(); // This will also clear the saved game state
   }
 });
 

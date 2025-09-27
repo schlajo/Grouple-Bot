@@ -24,3 +24,6 @@ Thumbs.db
 
 # Bot data (if you want to keep game history)
 # game-history.json
+
+# Game state persistence
+game-state.json
