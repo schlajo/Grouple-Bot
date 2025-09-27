@@ -27,3 +27,4 @@ Thumbs.db
 
 # Game state persistence
 game-state.json
+player-stats.json

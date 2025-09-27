@@ -26,6 +26,9 @@ let currentGame = {
 // Pending host requests
 let pendingHosts = new Map(); // userId -> {channelId, timestamp}
 
+// Win tracking
+let playerStats = new Map(); // userId -> {wins: number, totalGames: number}
+
 // Persistence functions
 function saveGameState() {
   if (currentGame.isActive) {
@@ -47,6 +50,45 @@ function saveGameState() {
       console.error("Error saving game state:", error);
     }
   }
+}
+
+function savePlayerStats() {
+  try {
+    const statsData = Array.from(playerStats.entries());
+    fs.writeFileSync("player-stats.json", JSON.stringify(statsData, null, 2));
+    console.log("Player stats saved successfully");
+  } catch (error) {
+    console.error("Error saving player stats:", error);
+  }
+}
+
+function loadPlayerStats() {
+  try {
+    if (fs.existsSync("player-stats.json")) {
+      const statsData = JSON.parse(
+        fs.readFileSync("player-stats.json", "utf8")
+      );
+      playerStats = new Map(statsData);
+      console.log(`Loaded stats for ${playerStats.size} players`);
+    }
+  } catch (error) {
+    console.error("Error loading player stats:", error);
+  }
+}
+
+function updatePlayerStats(userId, won) {
+  if (!playerStats.has(userId)) {
+    playerStats.set(userId, { wins: 0, totalGames: 0 });
+  }
+
+  const stats = playerStats.get(userId);
+  stats.totalGames++;
+  if (won) {
+    stats.wins++;
+  }
+
+  playerStats.set(userId, stats);
+  savePlayerStats();
 }
 
 function loadGameState() {
@@ -206,6 +248,9 @@ function endGame() {
 client.once("clientReady", () => {
   console.log(`🎯 ${client.user.tag} is ready for Wordle!`);
 
+  // Load player stats
+  loadPlayerStats();
+
   // Try to restore game state on startup
   const gameRestored = loadGameState();
   if (gameRestored) {
@@ -258,7 +303,7 @@ client.on("messageCreate", async (message) => {
           .setColor(0xffd700)
           .setTitle("🎯 Custom Wordle Challenge!")
           .setDescription(
-            `${message.author.username} has chosen a ${currentGame.word.length}-letter word for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
+            `${message.author.username} has chosen a **${currentGame.word.length}-letter word** for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
           )
           .addFields(
             {
@@ -294,7 +339,7 @@ client.on("messageCreate", async (message) => {
         .setColor(0x00ff00)
         .setTitle("🎯 Daily Wordle Challenge!")
         .setDescription(
-          `A new ${currentGame.word.length}-letter word has been chosen!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
+          `A new **${currentGame.word.length}-letter word** has been chosen!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
         )
         .addFields(
           {
@@ -421,6 +466,11 @@ client.on("messageCreate", async (message) => {
 
     if (isWinner) {
       currentGame.winners.add(userId);
+      // Update player stats
+      updatePlayerStats(userId, true);
+    } else {
+      // Still count as a game played
+      updatePlayerStats(userId, false);
     }
 
     // Store guess with timestamp and update last guess time
@@ -527,6 +577,48 @@ client.on("messageCreate", async (message) => {
         `⏳ ${hoursLeft}h ${minutesLeft}m until re-guessing is allowed.`
       );
     }
+    return;
+  }
+
+  // Show player stats
+  if (content === "!wordle-stats") {
+    if (playerStats.size === 0) {
+      message.reply(
+        "📊 No player statistics yet! Play some games to see your stats."
+      );
+      return;
+    }
+
+    // Sort players by wins (descending)
+    const sortedStats = Array.from(playerStats.entries()).sort(
+      (a, b) => b[1].wins - a[1].wins
+    );
+
+    let description = "🏆 **Leaderboard**\n\n";
+
+    for (let i = 0; i < Math.min(sortedStats.length, 10); i++) {
+      const [userId, stats] = sortedStats[i];
+      try {
+        const user = await client.users.fetch(userId);
+        const winRate =
+          stats.totalGames > 0
+            ? Math.round((stats.wins / stats.totalGames) * 100)
+            : 0;
+        const medal =
+          i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+        description += `${medal} **${user.username}**: ${stats.wins} wins (${winRate}% win rate)\n`;
+      } catch (error) {
+        console.error("Error fetching user for stats:", error);
+      }
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0xffd700)
+      .setTitle("📊 Wordle Statistics")
+      .setDescription(description)
+      .setFooter({ text: "Play more games to improve your stats!" });
+
+    message.channel.send({ embeds: [embed] });
     return;
   }
 
@@ -638,6 +730,11 @@ client.on("messageCreate", async (message) => {
           inline: false,
         },
         {
+          name: "!wordle-stats",
+          value: "Show player leaderboard and win statistics",
+          inline: false,
+        },
+        {
           name: "!host-wordle",
           value:
             "Host a game with your own word (3-10 letters, bot will DM you for the word)",
@@ -692,7 +789,7 @@ cron.schedule(
             .setColor(0x00ff00)
             .setTitle("🌅 Good Morning! Daily Wordle Time!")
             .setDescription(
-              `A new ${currentGame.word.length}-letter word has been chosen for today!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
+              `A new **${currentGame.word.length}-letter word** has been chosen for today!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
             )
             .addFields(
               {
