@@ -1,6 +1,7 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 const cron = require("node-cron");
 const fs = require("fs");
+const database = require("./database");
 require("dotenv").config();
 
 // Bot setup
@@ -29,100 +30,61 @@ let pendingHosts = new Map(); // userId -> {channelId, timestamp}
 // Win tracking
 let playerStats = new Map(); // userId -> {wins: number, totalGames: number}
 
-// Persistence functions
-function saveGameState() {
+// Database persistence functions
+async function saveGameState() {
   if (currentGame.isActive) {
     const gameData = {
       word: currentGame.word,
-      guesses: Array.from(currentGame.guesses.entries()),
+      guesses: currentGame.guesses,
       date: currentGame.date,
-      winners: Array.from(currentGame.winners),
+      winners: currentGame.winners,
       isActive: currentGame.isActive,
       lastGuessTime: currentGame.lastGuessTime,
       isCustomWord: currentGame.isCustomWord,
       host: currentGame.host,
     };
 
-    try {
-      fs.writeFileSync("game-state.json", JSON.stringify(gameData, null, 2));
-      console.log("Game state saved successfully");
-    } catch (error) {
-      console.error("Error saving game state:", error);
+    const result = await database.saveGameState(gameData);
+    if (result.success && result.gameId) {
+      currentGame.gameId = result.gameId;
     }
+    return result;
   }
+  return { success: true };
 }
 
-function savePlayerStats() {
-  try {
-    const statsData = Array.from(playerStats.entries());
-    fs.writeFileSync("player-stats.json", JSON.stringify(statsData, null, 2));
-    console.log("Player stats saved successfully");
-  } catch (error) {
-    console.error("Error saving player stats:", error);
-  }
+async function savePlayerStats() {
+  return await database.savePlayerStats(playerStats);
 }
 
-function loadPlayerStats() {
-  try {
-    if (fs.existsSync("player-stats.json")) {
-      const statsData = JSON.parse(
-        fs.readFileSync("player-stats.json", "utf8")
-      );
-      playerStats = new Map(statsData);
-      console.log(`Loaded stats for ${playerStats.size} players`);
+async function loadPlayerStats() {
+  const stats = await database.loadPlayerStats();
+  playerStats = stats;
+  return stats;
+}
+
+async function updatePlayerStats(userId, won) {
+  const result = await database.updatePlayerStats(userId, won);
+  if (result.success) {
+    // Update local cache
+    if (!playerStats.has(userId)) {
+      playerStats.set(userId, { wins: 0, totalGames: 0 });
     }
-  } catch (error) {
-    console.error("Error loading player stats:", error);
-  }
-}
-
-function updatePlayerStats(userId, won) {
-  if (!playerStats.has(userId)) {
-    playerStats.set(userId, { wins: 0, totalGames: 0 });
-  }
-
-  const stats = playerStats.get(userId);
-  stats.totalGames++;
-  if (won) {
-    stats.wins++;
-  }
-
-  playerStats.set(userId, stats);
-  savePlayerStats();
-}
-
-function loadGameState() {
-  try {
-    if (fs.existsSync("game-state.json")) {
-      const gameData = JSON.parse(fs.readFileSync("game-state.json", "utf8"));
-
-      // Check if the saved game is from today
-      const today = new Date().toDateString();
-      if (gameData.date === today && gameData.isActive) {
-        currentGame = {
-          word: gameData.word,
-          guesses: new Map(gameData.guesses),
-          date: gameData.date,
-          winners: new Set(gameData.winners),
-          isActive: gameData.isActive,
-          lastGuessTime: gameData.lastGuessTime
-            ? new Date(gameData.lastGuessTime)
-            : null,
-          isCustomWord: gameData.isCustomWord,
-          host: gameData.host,
-        };
-
-        console.log(
-          `Game state restored: ${currentGame.word} (${currentGame.guesses.size} guesses)`
-        );
-        return true;
-      } else {
-        console.log("Old game state found, clearing...");
-        fs.unlinkSync("game-state.json");
-      }
+    const stats = playerStats.get(userId);
+    stats.totalGames++;
+    if (won) {
+      stats.wins++;
     }
-  } catch (error) {
-    console.error("Error loading game state:", error);
+    playerStats.set(userId, stats);
+  }
+  return result;
+}
+
+async function loadGameState() {
+  const gameState = await database.loadGameState();
+  if (gameState) {
+    currentGame = gameState;
+    return true;
   }
   return false;
 }
@@ -194,7 +156,7 @@ function formatGuessResult(guess, result, isWinner) {
   return `${emoji}**${letters}**\n${result}`;
 }
 
-function startNewGame(customWord = null) {
+async function startNewGame(customWord = null) {
   const today = new Date().toDateString();
 
   // Don't start a new game if one is already active for today
@@ -205,7 +167,7 @@ function startNewGame(customWord = null) {
   // If there's an old game from yesterday, end it first
   if (currentGame.isActive && currentGame.date !== today) {
     console.log("Ending previous day game to start new one");
-    endGame();
+    await endGame();
   }
 
   currentGame = {
@@ -217,6 +179,7 @@ function startNewGame(customWord = null) {
     lastGuessTime: null,
     isCustomWord: !!customWord,
     host: customWord ? null : null, // Will be set by the host command
+    gameId: null,
   };
 
   console.log(
@@ -225,39 +188,64 @@ function startNewGame(customWord = null) {
     }`
   );
 
-  // Save game state
-  saveGameState();
+  // Save game state to database
+  await saveGameState();
   return true;
 }
 
-function endGame() {
+async function endGame() {
   currentGame.isActive = false;
 
-  // Clear saved game state
-  try {
-    if (fs.existsSync("game-state.json")) {
-      fs.unlinkSync("game-state.json");
-      console.log("Game state cleared");
-    }
-  } catch (error) {
-    console.error("Error clearing game state:", error);
+  // End game in database if we have a gameId
+  if (currentGame.gameId) {
+    await database.endGame(currentGame.gameId);
   }
+
+  // Clear local game state
+  currentGame = {
+    word: null,
+    guesses: new Map(),
+    date: null,
+    winners: new Set(),
+    isActive: false,
+    lastGuessTime: null,
+    isCustomWord: false,
+    host: null,
+    gameId: null,
+  };
+
+  console.log("Game ended and cleared from database");
 }
 
 // Bot events
-client.once("clientReady", () => {
+client.once("clientReady", async () => {
   console.log(`🎯 ${client.user.tag} is ready for Wordle!`);
 
-  // Load player stats
-  loadPlayerStats();
+  // Test database connection
+  const dbTest = await database.testConnection();
+  if (!dbTest.success) {
+    console.error(
+      "❌ Database connection failed! Bot will continue with limited functionality."
+    );
+  }
+
+  // Load player stats from database
+  await loadPlayerStats();
+
+  // Load pending hosts from database
+  const pendingHostsFromDB = await database.loadPendingHosts();
+  pendingHosts = pendingHostsFromDB;
 
   // Try to restore game state on startup
-  const gameRestored = loadGameState();
+  const gameRestored = await loadGameState();
   if (gameRestored) {
-    console.log("Game restored from previous session!");
+    console.log("Game restored from database!");
   } else {
     console.log("No active game found, waiting for 9 AM or commands...");
   }
+
+  // Clean up old data
+  await database.cleanupOldData();
 });
 
 client.on("messageCreate", async (message) => {
@@ -292,12 +280,12 @@ client.on("messageCreate", async (message) => {
       const hostData = pendingHosts.get(userId);
       const channel = client.channels.cache.get(hostData.channelId);
 
-      if (channel && startNewGame(customWord)) {
+      if (channel && (await startNewGame(customWord))) {
         // Store the host information
         currentGame.host = userId;
 
         // Save game state after setting host
-        saveGameState();
+        await saveGameState();
 
         const embed = new EmbedBuilder()
           .setColor(0xffd700)
@@ -320,12 +308,14 @@ client.on("messageCreate", async (message) => {
           "✅ Your custom Wordle game has been started in the server! Good luck to everyone!"
         );
 
-        // Clear the pending request
+        // Clear the pending request from database
+        await database.removePendingHost(userId);
         pendingHosts.delete(userId);
       } else {
         message.reply(
           "❌ Could not start the game. There might already be an active game today."
         );
+        await database.removePendingHost(userId);
         pendingHosts.delete(userId);
       }
       return;
@@ -334,7 +324,7 @@ client.on("messageCreate", async (message) => {
 
   // Manual start command (for testing or manual games)
   if (content === "!start-wordle") {
-    if (startNewGame()) {
+    if (await startNewGame()) {
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
         .setTitle("🎯 Daily Wordle Challenge!")
@@ -369,12 +359,18 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    // Store the pending host request
-    pendingHosts.set(message.author.id, {
-      channelId: message.channel.id,
-      timestamp: new Date(),
-    });
-    console.log(`Stored pending host request for ${message.author.username}`);
+    // Store the pending host request in database
+    const result = await database.savePendingHost(
+      message.author.id,
+      message.channel.id
+    );
+    if (result.success) {
+      pendingHosts.set(message.author.id, {
+        channelId: message.channel.id,
+        timestamp: new Date(),
+      });
+      console.log(`Stored pending host request for ${message.author.username}`);
+    }
 
     // DM the user asking for their word
     try {
@@ -390,6 +386,7 @@ client.on("messageCreate", async (message) => {
       message.reply(
         "❌ I couldn't send you a DM! Please enable DMs from server members and try again."
       );
+      await database.removePendingHost(message.author.id);
       pendingHosts.delete(message.author.id);
     }
     return;
@@ -401,7 +398,7 @@ client.on("messageCreate", async (message) => {
     const today = new Date().toDateString();
     if (currentGame.isActive && currentGame.date !== today) {
       console.log("Auto-ending old game from previous day");
-      endGame();
+      await endGame();
     }
 
     if (!currentGame.isActive) {
@@ -456,7 +453,7 @@ client.on("messageCreate", async (message) => {
         );
 
         // Save game state after removing old guess
-        saveGameState();
+        await saveGameState();
       }
     }
 
@@ -467,10 +464,10 @@ client.on("messageCreate", async (message) => {
     if (isWinner) {
       currentGame.winners.add(userId);
       // Update player stats
-      updatePlayerStats(userId, true);
+      await updatePlayerStats(userId, true);
     } else {
       // Still count as a game played
-      updatePlayerStats(userId, false);
+      await updatePlayerStats(userId, false);
     }
 
     // Store guess with timestamp and update last guess time
@@ -479,7 +476,7 @@ client.on("messageCreate", async (message) => {
     currentGame.lastGuessTime = timestamp;
 
     // Save game state after each guess
-    saveGameState();
+    await saveGameState();
 
     // Send result
     const embed = new EmbedBuilder()
@@ -535,7 +532,7 @@ client.on("messageCreate", async (message) => {
           });
 
         message.channel.send({ embeds: [endEmbed] });
-        endGame();
+        await endGame();
       }, 2000); // 2 second delay
     }
 
@@ -628,7 +625,7 @@ client.on("messageCreate", async (message) => {
     const today = new Date().toDateString();
     if (currentGame.isActive && currentGame.date !== today) {
       console.log("Auto-ending old game from previous day");
-      endGame();
+      await endGame();
     }
 
     if (!currentGame.isActive) {
@@ -702,7 +699,7 @@ client.on("messageCreate", async (message) => {
       .setFooter({ text: "Thanks for playing! See you tomorrow at 9 AM! 🌅" });
 
     message.channel.send({ embeds: [embed] });
-    endGame();
+    await endGame();
     return;
   }
 
@@ -768,10 +765,10 @@ client.on("messageCreate", async (message) => {
 // Schedule daily game at 9 AM
 cron.schedule(
   "0 9 * * *",
-  () => {
+  async () => {
     console.log("🌅 9 AM - Starting daily Wordle game!");
 
-    if (startNewGame()) {
+    if (await startNewGame()) {
       // Find all channels the bot has access to and send the daily message
       client.guilds.cache.forEach((guild) => {
         // Try to find a general channel or the first text channel available
@@ -858,7 +855,7 @@ cron.schedule("59 23 * * *", async () => {
       }
     });
 
-    endGame(); // This will also clear the saved game state
+    await endGame(); // This will also clear the saved game state
   }
 });
 
