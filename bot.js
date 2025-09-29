@@ -696,7 +696,7 @@ client.on("messageCreate", async (message) => {
       .setColor(0xff6b6b)
       .setTitle("🎯 Game Over!")
       .setDescription(description)
-      .setFooter({ text: "Thanks for playing! See you tomorrow at 9 AM! 🌅" });
+      .setFooter({ text: "Thanks for playing! New games start at 9 AM! 🌅" });
 
     message.channel.send({ embeds: [embed] });
     await endGame();
@@ -755,7 +755,9 @@ client.on("messageCreate", async (message) => {
           "🟩 Green: Correct letter in correct position\n🟨 Yellow: Letter is in word but wrong position\n⬜ Gray: Letter not in word",
         inline: false,
       })
-      .setFooter({ text: "Daily games start automatically at 9 AM! 🌅" });
+      .setFooter({
+        text: "New games start automatically at 9 AM! Games run until solved! 🌅",
+      });
 
     message.channel.send({ embeds: [embed] });
     return;
@@ -811,53 +813,7 @@ cron.schedule(
   }
 );
 
-// Auto-end game at 11:59 PM
-cron.schedule("59 23 * * *", async () => {
-  if (currentGame.isActive) {
-    console.log("🌙 End of day - Ending Wordle game");
-
-    client.guilds.cache.forEach(async (guild) => {
-      const channel =
-        guild.channels.cache.find(
-          (ch) =>
-            ch.name.includes("general") ||
-            ch.name.includes("wordle") ||
-            ch.name.includes("games") ||
-            ch.name.includes("chat")
-        ) || guild.channels.cache.filter((ch) => ch.type === 0).first();
-
-      if (channel) {
-        let description = `**The word was: ${currentGame.word}**\n\n`;
-
-        if (currentGame.winners.size > 0) {
-          description += "🏆 **Today's Winners:**\n";
-          for (const userId of currentGame.winners) {
-            try {
-              const user = await client.users.fetch(userId);
-              description += `• ${user.username}\n`;
-            } catch (error) {
-              console.error("Error fetching user:", error);
-            }
-          }
-        } else {
-          description += "😔 **No winners today!**\n";
-        }
-
-        const embed = new EmbedBuilder()
-          .setColor(0xff6b6b)
-          .setTitle("🌙 Daily Wordle Complete!")
-          .setDescription(description)
-          .setFooter({
-            text: "Thanks for playing! See you tomorrow at 9 AM! 🌅",
-          });
-
-        channel.send({ embeds: [embed] }).catch(console.error);
-      }
-    });
-
-    await endGame(); // This will also clear the saved game state
-  }
-});
+// Removed daily auto-end - games now run until solved or manually ended
 
 // Error handling
 client.on("error", console.error);
