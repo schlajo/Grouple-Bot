@@ -76,19 +76,16 @@ class Database {
 
   async loadGameState() {
     try {
-      const today = new Date().toDateString();
-
-      // Get active game for today
+      // Get any active game (regardless of date)
       const { data: game, error: gameError } = await this.client
         .from("games")
         .select("*")
-        .eq("date", today)
         .eq("is_active", true)
         .single();
 
       if (gameError) {
         if (gameError.code === "PGRST116") {
-          console.log("No active game found for today");
+          console.log("No active game found");
           return null;
         }
         throw gameError;
@@ -110,7 +107,13 @@ class Database {
       const winners = new Set();
 
       guesses.forEach((guess) => {
-        guessesMap.set(guess.user_id, {
+        // Initialize array for user if it doesn't exist
+        if (!guessesMap.has(guess.user_id)) {
+          guessesMap.set(guess.user_id, []);
+        }
+
+        // Add guess to user's array
+        guessesMap.get(guess.user_id).push({
           guess: guess.guess,
           result: guess.result,
           isWinner: guess.is_winner,
@@ -151,27 +154,36 @@ class Database {
       // Get existing guesses for this game
       const { data: existingGuesses, error: fetchError } = await this.client
         .from("guesses")
-        .select("user_id")
+        .select("user_id, timestamp")
         .eq("game_id", gameId);
 
       if (fetchError) {
         throw fetchError;
       }
 
-      const existingUserIds = new Set(existingGuesses.map((g) => g.user_id));
+      // Create a set of existing guess identifiers
+      const existingGuessIds = new Set(
+        existingGuesses.map(
+          (g) => `${g.user_id}_${new Date(g.timestamp).getTime()}`
+        )
+      );
       const guessesToInsert = [];
 
       // Only insert new guesses
-      for (const [userId, guessData] of guessesMap) {
-        if (!existingUserIds.has(userId)) {
-          guessesToInsert.push({
-            game_id: gameId,
-            user_id: userId,
-            guess: guessData.guess,
-            result: guessData.result,
-            is_winner: guessData.isWinner,
-            timestamp: guessData.timestamp.toISOString(),
-          });
+      for (const [userId, guessesArray] of guessesMap) {
+        for (const guessData of guessesArray) {
+          // Create a unique identifier for each guess
+          const guessId = `${userId}_${guessData.timestamp.getTime()}`;
+          if (!existingGuessIds.has(guessId)) {
+            guessesToInsert.push({
+              game_id: gameId,
+              user_id: userId,
+              guess: guessData.guess,
+              result: guessData.result,
+              is_winner: guessData.isWinner,
+              timestamp: guessData.timestamp.toISOString(),
+            });
+          }
         }
       }
 
@@ -218,6 +230,7 @@ class Database {
           user_id: userId,
           wins: stats.wins,
           total_games: stats.totalGames,
+          total_guesses: stats.totalGuesses || 0,
           updated_at: new Date().toISOString(),
         })
       );
@@ -254,6 +267,7 @@ class Database {
         statsMap.set(stat.user_id, {
           wins: stat.wins,
           totalGames: stat.total_games,
+          totalGuesses: stat.total_guesses || 0,
         });
       });
 
@@ -265,7 +279,7 @@ class Database {
     }
   }
 
-  async updatePlayerStats(userId, won) {
+  async updatePlayerStats(userId, won, isNewGame = false) {
     try {
       // First, try to get existing stats
       const { data: existingStats, error: fetchError } = await this.client
@@ -280,7 +294,8 @@ class Database {
         newStats = {
           user_id: userId,
           wins: won ? 1 : 0,
-          total_games: 1,
+          total_games: isNewGame ? 1 : 0,
+          total_guesses: 1,
         };
       } else if (fetchError) {
         throw fetchError;
@@ -289,7 +304,8 @@ class Database {
         newStats = {
           user_id: userId,
           wins: existingStats.wins + (won ? 1 : 0),
-          total_games: existingStats.total_games + 1,
+          total_games: existingStats.total_games + (isNewGame ? 1 : 0),
+          total_guesses: existingStats.total_guesses + 1,
         };
       }
 
@@ -302,7 +318,7 @@ class Database {
       }
 
       console.log(
-        `Updated stats for user ${userId}: ${newStats.wins}/${newStats.total_games} wins`
+        `Updated stats for user ${userId}: ${newStats.wins} wins, ${newStats.total_games} games, ${newStats.total_guesses} guesses`
       );
       return { success: true };
     } catch (error) {

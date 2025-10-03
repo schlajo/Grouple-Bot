@@ -63,15 +63,18 @@ async function loadPlayerStats() {
   return stats;
 }
 
-async function updatePlayerStats(userId, won) {
-  const result = await database.updatePlayerStats(userId, won);
+async function updatePlayerStats(userId, won, isNewGame = false) {
+  const result = await database.updatePlayerStats(userId, won, isNewGame);
   if (result.success) {
     // Update local cache
     if (!playerStats.has(userId)) {
-      playerStats.set(userId, { wins: 0, totalGames: 0 });
+      playerStats.set(userId, { wins: 0, totalGames: 0, totalGuesses: 0 });
     }
     const stats = playerStats.get(userId);
-    stats.totalGames++;
+    stats.totalGuesses++;
+    if (isNewGame) {
+      stats.totalGames++;
+    }
     if (won) {
       stats.wins++;
     }
@@ -157,22 +160,18 @@ function formatGuessResult(guess, result, isWinner) {
 }
 
 async function startNewGame(customWord = null) {
-  const today = new Date().toDateString();
+  const today = new Date().toLocaleDateString("en-US", {
+    timeZone: "America/Chicago",
+  });
 
-  // Don't start a new game if one is already active for today
-  if (currentGame.isActive && currentGame.date === today) {
+  // Don't start a new game if one is already active
+  if (currentGame.isActive) {
     return false;
-  }
-
-  // If there's an old game from yesterday, end it first
-  if (currentGame.isActive && currentGame.date !== today) {
-    console.log("Ending previous day game to start new one");
-    await endGame();
   }
 
   currentGame = {
     word: customWord ? customWord.toUpperCase() : getRandomWord(),
-    guesses: new Map(),
+    guesses: new Map(), // Will store userId -> array of guesses
     date: today,
     winners: new Set(),
     isActive: true,
@@ -204,7 +203,7 @@ async function endGame() {
   // Clear local game state
   currentGame = {
     word: null,
-    guesses: new Map(),
+    guesses: new Map(), // Will store userId -> array of guesses
     date: null,
     winners: new Set(),
     isActive: false,
@@ -327,7 +326,7 @@ client.on("messageCreate", async (message) => {
     if (await startNewGame()) {
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
-        .setTitle("🎯 Daily Wordle Challenge!")
+        .setTitle("🎯 Wordle Challenge!")
         .setDescription(
           `A new **${currentGame.word.length}-letter word** has been chosen!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
         )
@@ -394,16 +393,9 @@ client.on("messageCreate", async (message) => {
 
   // Guess command
   if (content.startsWith("!guess ")) {
-    // Check if we need to clean up an old game first
-    const today = new Date().toDateString();
-    if (currentGame.isActive && currentGame.date !== today) {
-      console.log("Auto-ending old game from previous day");
-      await endGame();
-    }
-
     if (!currentGame.isActive) {
       message.reply(
-        "❌ No active game! Wait for the daily game at 9 AM or use `!start-wordle` to start one manually."
+        "❌ No active game! Use `!start-wordle` to start one manually."
       );
       return;
     }
@@ -432,7 +424,10 @@ client.on("messageCreate", async (message) => {
     const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000); // 2 hours in milliseconds
 
     // Check if player already guessed
-    if (currentGame.guesses.has(userId)) {
+    if (
+      currentGame.guesses.has(userId) &&
+      currentGame.guesses.get(userId).length > 0
+    ) {
       // Allow re-guess if no one has guessed in the last 2 hours
       if (
         currentGame.lastGuessTime &&
@@ -443,36 +438,41 @@ client.on("messageCreate", async (message) => {
         );
         return;
       } else {
-        // Remove their old guess to allow a new one
-        currentGame.guesses.delete(userId);
-        if (currentGame.winners.has(userId)) {
-          currentGame.winners.delete(userId);
-        }
+        // Allow re-guess after 2 hours (keep old guess, add new one)
         message.reply(
           "⏰ 2 hours have passed with no new guesses - you can try again!"
         );
-
-        // Save game state after removing old guess
-        await saveGameState();
       }
     }
 
     // Process the guess
     const result = compareGuess(guess, currentGame.word);
     const isWinner = guess === currentGame.word;
+    const isFirstGuess =
+      !currentGame.guesses.has(userId) ||
+      currentGame.guesses.get(userId).length === 0;
 
     if (isWinner) {
       currentGame.winners.add(userId);
-      // Update player stats
-      await updatePlayerStats(userId, true);
+      // Update player stats (count as new game if first guess, otherwise just win)
+      await updatePlayerStats(userId, true, isFirstGuess);
     } else {
-      // Still count as a game played
-      await updatePlayerStats(userId, false);
+      // Update player stats (count as new game if first guess)
+      await updatePlayerStats(userId, false, isFirstGuess);
     }
 
     // Store guess with timestamp and update last guess time
     const timestamp = new Date();
-    currentGame.guesses.set(userId, { guess, result, isWinner, timestamp });
+
+    // Initialize guesses array for user if it doesn't exist
+    if (!currentGame.guesses.has(userId)) {
+      currentGame.guesses.set(userId, []);
+    }
+
+    // Add the new guess to the user's guesses array
+    currentGame.guesses
+      .get(userId)
+      .push({ guess, result, isWinner, timestamp });
     currentGame.lastGuessTime = timestamp;
 
     // Save game state after each guess
@@ -509,14 +509,16 @@ client.on("messageCreate", async (message) => {
 
         if (currentGame.guesses.size > 0) {
           description += "\n**All Guesses:**\n";
-          for (const [userId, data] of currentGame.guesses) {
+          for (const [userId, guessesArray] of currentGame.guesses) {
             try {
               const user = await client.users.fetch(userId);
-              description += `${user.username}: ${formatGuessResult(
-                data.guess,
-                data.result,
-                data.isWinner
-              )}\n`;
+              for (const guessData of guessesArray) {
+                description += `${user.username}: ${formatGuessResult(
+                  guessData.guess,
+                  guessData.result,
+                  guessData.isWinner
+                )}\n`;
+              }
             } catch (error) {
               console.error("Error fetching user:", error);
             }
@@ -543,7 +545,7 @@ client.on("messageCreate", async (message) => {
   if (content === "!wordle-time") {
     if (!currentGame.isActive) {
       message.reply(
-        "❌ No active game! Wait for the daily game at 9 AM or use `!start-wordle` to start one manually."
+        "❌ No active game! Use `!start-wordle` to start one manually."
       );
       return;
     }
@@ -597,13 +599,9 @@ client.on("messageCreate", async (message) => {
       const [userId, stats] = sortedStats[i];
       try {
         const user = await client.users.fetch(userId);
-        const winRate =
-          stats.totalGames > 0
-            ? Math.round((stats.wins / stats.totalGames) * 100)
-            : 0;
         const medal =
           i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
-        description += `${medal} **${user.username}**: ${stats.wins} wins (${winRate}% win rate)\n`;
+        description += `${medal} **${user.username}**: ${stats.wins} wins, ${stats.totalGames} games, ${stats.totalGuesses} guesses\n`;
       } catch (error) {
         console.error("Error fetching user for stats:", error);
       }
@@ -621,33 +619,36 @@ client.on("messageCreate", async (message) => {
 
   // Show current game status
   if (content === "!wordle-status") {
-    // Check if we need to clean up an old game first
-    const today = new Date().toDateString();
-    if (currentGame.isActive && currentGame.date !== today) {
-      console.log("Auto-ending old game from previous day");
-      await endGame();
-    }
-
     if (!currentGame.isActive) {
       message.reply(
-        "❌ No active game! Wait for the daily game at 9 AM or use `!start-wordle` to start one manually."
+        "❌ No active game! Use `!start-wordle` to start one manually."
       );
       return;
     }
 
+    // Calculate total guesses across all players
+    let totalGuesses = 0;
+    for (const guessesArray of currentGame.guesses.values()) {
+      totalGuesses += guessesArray.length;
+    }
+
     let description = `**Word Pattern:** ${"_ "
       .repeat(currentGame.word.length)
-      .trim()}\n**Players:** ${currentGame.guesses.size}\n\n`;
+      .trim()}\n**Players:** ${
+      currentGame.guesses.size
+    }\n**Total Guesses:** ${totalGuesses}\n\n`;
 
     if (currentGame.guesses.size > 0) {
       description += "**Guesses:**\n";
-      for (const [userId, data] of currentGame.guesses) {
+      for (const [userId, guessesArray] of currentGame.guesses) {
         const user = await client.users.fetch(userId);
-        description += `${user.username}: ${formatGuessResult(
-          data.guess,
-          data.result,
-          data.isWinner
-        )}\n`;
+        for (const guessData of guessesArray) {
+          description += `${user.username}: ${formatGuessResult(
+            guessData.guess,
+            guessData.result,
+            guessData.isWinner
+          )}\n`;
+        }
       }
     }
 
@@ -682,13 +683,15 @@ client.on("messageCreate", async (message) => {
 
     if (currentGame.guesses.size > 0) {
       description += "\n**All Guesses:**\n";
-      for (const [userId, data] of currentGame.guesses) {
+      for (const [userId, guessesArray] of currentGame.guesses) {
         const user = await client.users.fetch(userId);
-        description += `${user.username}: ${formatGuessResult(
-          data.guess,
-          data.result,
-          data.isWinner
-        )}\n`;
+        for (const guessData of guessesArray) {
+          description += `${user.username}: ${formatGuessResult(
+            guessData.guess,
+            guessData.result,
+            guessData.isWinner
+          )}\n`;
+        }
       }
     }
 
@@ -696,7 +699,9 @@ client.on("messageCreate", async (message) => {
       .setColor(0xff6b6b)
       .setTitle("🎯 Game Over!")
       .setDescription(description)
-      .setFooter({ text: "Thanks for playing! New games start at 9 AM! 🌅" });
+      .setFooter({
+        text: "Thanks for playing! Use !start-wordle for a new game! 🌅",
+      });
 
     message.channel.send({ embeds: [embed] });
     await endGame();
@@ -708,7 +713,7 @@ client.on("messageCreate", async (message) => {
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
       .setTitle("🎯 Wordle Bot Commands")
-      .setDescription("Welcome to the daily group Wordle game!")
+      .setDescription("Welcome to the group Wordle game!")
       .addFields(
         {
           name: "!guess WORD",
@@ -728,7 +733,8 @@ client.on("messageCreate", async (message) => {
         },
         {
           name: "!wordle-stats",
-          value: "Show player leaderboard and win statistics",
+          value:
+            "Show player leaderboard with wins, games played, and total guesses",
           inline: false,
         },
         {
@@ -756,7 +762,7 @@ client.on("messageCreate", async (message) => {
         inline: false,
       })
       .setFooter({
-        text: "New games start automatically at 9 AM! Games run until solved! 🌅",
+        text: "New games start automatically at 9 AM! Games run indefinitely until solved! 🌅",
       });
 
     message.channel.send({ embeds: [embed] });
@@ -786,7 +792,7 @@ cron.schedule(
         if (channel) {
           const embed = new EmbedBuilder()
             .setColor(0x00ff00)
-            .setTitle("🌅 Good Morning! Daily Wordle Time!")
+            .setTitle("🌅 Good Morning! New Wordle Game!")
             .setDescription(
               `A new **${currentGame.word.length}-letter word** has been chosen for today!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
             )
