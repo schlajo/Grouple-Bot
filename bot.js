@@ -193,6 +193,22 @@ async function startNewGame(customWord = null) {
 }
 
 async function endGame() {
+  // Update global stats if game was solved (has winners)
+  if (currentGame.winners.size > 0 && currentGame.word) {
+    // Calculate total guesses from all players
+    let totalGuesses = 0;
+    for (const [userId, guessesArray] of currentGame.guesses) {
+      totalGuesses += guessesArray.length;
+    }
+
+    // Update global stats
+    await database.updateGlobalStats({
+      word: currentGame.word,
+      isCustomWord: currentGame.isCustomWord,
+      totalGuesses: totalGuesses,
+    });
+  }
+
   currentGame.isActive = false;
 
   // End game in database if we have a gameId
@@ -448,17 +464,18 @@ client.on("messageCreate", async (message) => {
     // Process the guess
     const result = compareGuess(guess, currentGame.word);
     const isWinner = guess === currentGame.word;
-    const isFirstGuess =
+    // Check if this is the first guess in THIS GAME (not first guess ever)
+    const isFirstGuessInThisGame =
       !currentGame.guesses.has(userId) ||
       currentGame.guesses.get(userId).length === 0;
 
     if (isWinner) {
       currentGame.winners.add(userId);
       // Update player stats (count as new game if first guess, otherwise just win)
-      await updatePlayerStats(userId, true, isFirstGuess);
+      await updatePlayerStats(userId, true, isFirstGuessInThisGame);
     } else {
       // Update player stats (count as new game if first guess)
-      await updatePlayerStats(userId, false, isFirstGuess);
+      await updatePlayerStats(userId, false, isFirstGuessInThisGame);
     }
 
     // Store guess with timestamp and update last guess time
@@ -617,6 +634,63 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // Show global statistics
+  if (content === "!global-stats") {
+    const stats = await database.getGlobalStats();
+
+    if (!stats || stats.games_solved === 0) {
+      message.reply(
+        "📊 No global statistics yet! Solve some games to see community stats."
+      );
+      return;
+    }
+
+    let description = `🎯 **Overall Statistics**\n`;
+    description += `• Games Solved: ${stats.games_solved}\n`;
+    description += `• Total Guesses: ${stats.total_guesses_in_solved_games}\n`;
+    description += `• Average Guesses per Solved Game: ${(
+      stats.total_guesses_in_solved_games / stats.games_solved
+    ).toFixed(1)}\n\n`;
+
+    description += `📊 **By Game Type**\n`;
+    if (stats.custom_games_solved > 0) {
+      description += `• Custom Games: ${stats.custom_games_solved} solved (${
+        stats.custom_guesses_total
+      } guesses) - Avg: ${(
+        stats.custom_guesses_total / stats.custom_games_solved
+      ).toFixed(1)}\n`;
+    }
+    if (stats.generated_games_solved > 0) {
+      description += `• Generated Games: ${
+        stats.generated_games_solved
+      } solved (${stats.generated_guesses_total} guesses) - Avg: ${(
+        stats.generated_guesses_total / stats.generated_games_solved
+      ).toFixed(1)}\n`;
+    }
+    description += `\n`;
+
+    description += `🔤 **By Word Length**\n`;
+    const wordLengths = [3, 4, 5, 6, 7, 8];
+    for (const length of wordLengths) {
+      const solved = stats[`word_length_${length}_solved`];
+      const guesses = stats[`word_length_${length}_guesses`];
+      if (solved > 0) {
+        description += `• ${length} letters: ${solved} solved (${guesses} guesses) - Avg: ${(
+          guesses / solved
+        ).toFixed(1)}\n`;
+      }
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0x00ff00)
+      .setTitle("🌍 Global Wordle Statistics")
+      .setDescription(description)
+      .setFooter({ text: "Community-wide game analytics!" });
+
+    message.channel.send({ embeds: [embed] });
+    return;
+  }
+
   // Show current game status
   if (content === "!wordle-status") {
     if (!currentGame.isActive) {
@@ -735,6 +809,12 @@ client.on("messageCreate", async (message) => {
           name: "!wordle-stats",
           value:
             "Show player leaderboard with wins, games played, and total guesses",
+          inline: false,
+        },
+        {
+          name: "!global-stats",
+          value:
+            "Show community-wide statistics including averages by game type and word length",
           inline: false,
         },
         {

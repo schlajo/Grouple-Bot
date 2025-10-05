@@ -437,6 +437,128 @@ class Database {
     }
   }
 
+  // Global stats functions
+  async updateGlobalStats(gameData) {
+    try {
+      const wordLength = gameData.word.length;
+      const isCustom = gameData.isCustomWord;
+      const totalGuesses = gameData.totalGuesses;
+
+      // Get current global stats
+      const { data: currentStats, error: fetchError } = await this.client
+        .from("global_stats")
+        .select("*")
+        .eq("id", 1)
+        .single();
+
+      if (fetchError && fetchError.code !== "PGRST116") {
+        throw fetchError;
+      }
+
+      // Initialize stats if they don't exist
+      const stats = currentStats || {
+        id: 1,
+        games_solved: 0,
+        total_guesses_in_solved_games: 0,
+        custom_games_solved: 0,
+        custom_guesses_total: 0,
+        generated_games_solved: 0,
+        generated_guesses_total: 0,
+        word_length_3_solved: 0,
+        word_length_3_guesses: 0,
+        word_length_4_solved: 0,
+        word_length_4_guesses: 0,
+        word_length_5_solved: 0,
+        word_length_5_guesses: 0,
+        word_length_6_solved: 0,
+        word_length_6_guesses: 0,
+        word_length_7_solved: 0,
+        word_length_7_guesses: 0,
+        word_length_8_solved: 0,
+        word_length_8_guesses: 0,
+      };
+
+      // Update overall stats
+      stats.games_solved += 1;
+      stats.total_guesses_in_solved_games += totalGuesses;
+
+      // Update custom vs generated stats
+      if (isCustom) {
+        stats.custom_games_solved += 1;
+        stats.custom_guesses_total += totalGuesses;
+      } else {
+        stats.generated_games_solved += 1;
+        stats.generated_guesses_total += totalGuesses;
+      }
+
+      // Update word length stats
+      const lengthKey = `word_length_${wordLength}`;
+      if (stats[`${lengthKey}_solved`] !== undefined) {
+        stats[`${lengthKey}_solved`] += 1;
+        stats[`${lengthKey}_guesses`] += totalGuesses;
+      }
+
+      // Save updated stats
+      const { error } = await this.client
+        .from("global_stats")
+        .upsert(stats, { onConflict: "id" });
+
+      if (error) {
+        throw error;
+      }
+
+      console.log(
+        `Updated global stats: ${stats.games_solved} games solved, ${stats.total_guesses_in_solved_games} total guesses`
+      );
+      return { success: true };
+    } catch (error) {
+      console.error("Error updating global stats:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getGlobalStats() {
+    try {
+      const { data, error } = await this.client
+        .from("global_stats")
+        .select("*")
+        .eq("id", 1)
+        .single();
+
+      if (error) {
+        if (error.code === "PGRST116") {
+          // No stats yet, return empty stats
+          return {
+            games_solved: 0,
+            total_guesses_in_solved_games: 0,
+            custom_games_solved: 0,
+            custom_guesses_total: 0,
+            generated_games_solved: 0,
+            generated_guesses_total: 0,
+            word_length_3_solved: 0,
+            word_length_3_guesses: 0,
+            word_length_4_solved: 0,
+            word_length_4_guesses: 0,
+            word_length_5_solved: 0,
+            word_length_5_guesses: 0,
+            word_length_6_solved: 0,
+            word_length_6_guesses: 0,
+            word_length_7_solved: 0,
+            word_length_7_guesses: 0,
+            word_length_8_solved: 0,
+            word_length_8_guesses: 0,
+          };
+        }
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error("Error getting global stats:", error);
+      return null;
+    }
+  }
+
   // Test connection
   async testConnection() {
     try {
