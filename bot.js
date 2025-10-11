@@ -154,9 +154,42 @@ function compareGuess(guess, target) {
 }
 
 function formatGuessResult(guess, result, isWinner) {
-  const letters = guess.split("").join("  "); // Double space to spread across all boxes
+  const letters = guess.split("");
+  const boxes = [];
+
+  // Parse emoji boxes
+  let i = 0;
+  while (i < result.length) {
+    const char = result[i];
+    if (char === "🟩" || char === "🟨" || char === "⬜") {
+      boxes.push(char);
+      i++;
+    } else {
+      // Handle 2-char emojis
+      boxes.push(result.substring(i, Math.min(i + 2, result.length)));
+      i += 2;
+    }
+  }
+
+  // Create letters line
+  const letterLine = letters.map((l) => `**${l}**`).join(" ");
+
+  // Create colored circles line
+  let circlesLine = "";
+  for (let j = 0; j < boxes.length; j++) {
+    const box = boxes[j] || "⬜";
+
+    if (box === "🟩") {
+      circlesLine += "🟢";
+    } else if (box === "🟨") {
+      circlesLine += "🟡";
+    } else {
+      circlesLine += "⚪";
+    }
+  }
+
   const emoji = isWinner ? "🏆 " : "";
-  return `${emoji}**${letters}**\n${result}`;
+  return `${emoji}${letterLine}\n${circlesLine}`;
 }
 
 async function startNewGame(customWord = null) {
