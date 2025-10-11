@@ -171,8 +171,8 @@ function formatGuessResult(guess, result, isWinner) {
     }
   }
 
-  // Create letters line with hyphens at start/end for alignment
-  const letterLine = "**- " + letters.join("") + " -**"; // Hyphens only at front and back
+  // Create letters line with hyphens at ends and dots between letters
+  const letterLine = "**- " + letters.join(" · ") + " -**"; // Hyphens at ends, middots between
 
   // Create colored circles line without spacing (compact)
   let circlesLine = "";
