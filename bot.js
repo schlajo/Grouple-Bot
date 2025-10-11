@@ -189,7 +189,10 @@ function formatGuessResult(guess, result, isWinner) {
   }
 
   const emoji = isWinner ? "🏆 " : "";
-  return `${emoji}${letterLine}\n${circlesLine}`; // Newline to put circles below letters
+  // Add spaces to indent boxes (approximate alignment with letters after username)
+  const indent =
+    "\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0"; // Non-breaking spaces for indent
+  return `${emoji}${letterLine}\n${indent}${circlesLine}`; // Indent boxes on second line
 }
 
 async function startNewGame(customWord = null) {
@@ -267,7 +270,7 @@ async function endGame() {
 
 // Bot events
 client.once("clientReady", async () => {
-  console.log(`🎯 ${client.user.tag} is ready for Wordle!`);
+  console.log(`🎯 ${client.user.tag} is ready for Grouple!`);
 
   // Test database connection
   const dbTest = await database.testConnection();
@@ -337,7 +340,7 @@ client.on("messageCreate", async (message) => {
 
         const embed = new EmbedBuilder()
           .setColor(0xffd700)
-          .setTitle("🎯 Custom Wordle Challenge!")
+          .setTitle("🎯 Custom Grouple Challenge!")
           .setDescription(
             `${message.author.username} has chosen a **${currentGame.word.length}-letter word** for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
           )
@@ -353,7 +356,7 @@ client.on("messageCreate", async (message) => {
 
         channel.send({ embeds: [embed] });
         message.reply(
-          "✅ Your custom Wordle game has been started in the server! Good luck to everyone!"
+          "✅ Your custom Grouple game has been started in the server! Good luck to everyone!"
         );
 
         // Clear the pending request from database
@@ -375,7 +378,7 @@ client.on("messageCreate", async (message) => {
     if (await startNewGame()) {
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
-        .setTitle("🎯 Wordle Challenge!")
+        .setTitle("🎯 Grouple Challenge!")
         .setDescription(
           `A new **${currentGame.word.length}-letter word** has been chosen!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
         )
@@ -423,7 +426,7 @@ client.on("messageCreate", async (message) => {
     // DM the user asking for their word
     try {
       await message.author.send(
-        "🎯 **Host a Custom Wordle Game!**\n\nPlease reply with your word (3-10 letters). Make sure it contains only letters!\n\nExamples:\n• `CAT` (3 letters)\n• `PIZZA` (5 letters)\n• `ELEPHANT` (8 letters)"
+        "🎯 **Host a Custom Grouple Game!**\n\nPlease reply with your word (3-10 letters). Make sure it contains only letters!\n\nExamples:\n• `CAT` (3 letters)\n• `PIZZA` (5 letters)\n• `ELEPHANT` (8 letters)"
       );
       message.reply(
         "📨 Check your DMs! I've sent you instructions for setting up your custom word."
@@ -672,7 +675,7 @@ client.on("messageCreate", async (message) => {
 
     const embed = new EmbedBuilder()
       .setColor(0xffd700)
-      .setTitle("📊 Wordle Statistics")
+      .setTitle("📊 Grouple Statistics")
       .setDescription(description)
       .setFooter({ text: "Play more games to improve your stats!" });
 
@@ -729,7 +732,7 @@ client.on("messageCreate", async (message) => {
 
     const embed = new EmbedBuilder()
       .setColor(0x00ff00)
-      .setTitle("🌍 Global Wordle Statistics")
+      .setTitle("🌍 Global Grouple Statistics")
       .setDescription(description)
       .setFooter({ text: "Community-wide game analytics!" });
 
@@ -774,7 +777,7 @@ client.on("messageCreate", async (message) => {
 
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
-      .setTitle("🎯 Current Wordle Game")
+      .setTitle("🎯 Current Grouple Game")
       .setDescription(description)
       .setFooter({ text: "Type !guess WORD to play!" });
 
@@ -832,8 +835,8 @@ client.on("messageCreate", async (message) => {
   if (content === "!wordle-help") {
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
-      .setTitle("🎯 Wordle Bot Commands")
-      .setDescription("Welcome to the group Wordle game!")
+      .setTitle("🎯 Grouple Bot Commands")
+      .setDescription("Welcome to the group Grouple game!")
       .addFields(
         {
           name: "!guess WORD",
@@ -900,7 +903,7 @@ client.on("messageCreate", async (message) => {
 cron.schedule(
   "0 9 * * *",
   async () => {
-    console.log("🌅 9 AM - Starting daily Wordle game!");
+    console.log("🌅 9 AM - Starting daily Grouple game!");
 
     if (await startNewGame()) {
       // Find all channels the bot has access to and send the daily message
@@ -918,7 +921,7 @@ cron.schedule(
         if (channel) {
           const embed = new EmbedBuilder()
             .setColor(0x00ff00)
-            .setTitle("🌅 Good Morning! New Wordle Game!")
+            .setTitle("🌅 Good Morning! New Grouple Game!")
             .setDescription(
               `A new **${currentGame.word.length}-letter word** has been chosen for today!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
             )
