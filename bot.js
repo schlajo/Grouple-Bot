@@ -174,19 +174,20 @@ function formatGuessResult(guess, result, isWinner) {
   // Create letters line with hyphens at ends and dots between letters
   const letterLine = "**-" + letters.join(" · ") + "-**"; // Hyphens at ends, middots between
 
-  // Create colored circles line without spacing (compact)
-  let circlesLine = "";
+  // Create colored circles line with small spaces between them
+  const circleArray = [];
   for (let j = 0; j < boxes.length; j++) {
     const box = boxes[j] || "⬜";
 
     if (box === "🟩") {
-      circlesLine += "🟢";
+      circleArray.push("🟢");
     } else if (box === "🟨") {
-      circlesLine += "🟡";
+      circleArray.push("🟡");
     } else {
-      circlesLine += "⚪";
+      circleArray.push("⚪");
     }
   }
+  const circlesLine = circleArray.join(" "); // Small space between circles
 
   const emoji = isWinner ? "🏆 " : "";
   return `${emoji}${letterLine}\n${circlesLine}`; // Newline to put circles below letters
