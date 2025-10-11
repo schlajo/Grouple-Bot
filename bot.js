@@ -172,7 +172,7 @@ function formatGuessResult(guess, result, isWinner) {
   }
 
   // Create letters line with hyphens at ends and dots between letters
-  const letterLine = "**- " + letters.join(" · ") + " -**"; // Hyphens at ends, middots between
+  const letterLine = "**-" + letters.join(" · ") + "-**"; // Hyphens at ends, middots between
 
   // Create colored circles line without spacing (compact)
   let circlesLine = "";
@@ -189,7 +189,7 @@ function formatGuessResult(guess, result, isWinner) {
   }
 
   const emoji = isWinner ? "🏆 " : "";
-  return `${emoji}${letterLine}\n${circlesLine}`;
+  return `${emoji}${letterLine} ${circlesLine}`; // Space instead of newline
 }
 
 async function startNewGame(customWord = null) {
