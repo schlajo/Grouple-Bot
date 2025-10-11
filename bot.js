@@ -180,11 +180,11 @@ function formatGuessResult(guess, result, isWinner) {
     const box = boxes[j] || "⬜";
 
     if (box === "🟩") {
-      circlesLine += "🟢";
+      circlesLine += "🟩";
     } else if (box === "🟨") {
-      circlesLine += "🟡";
+      circlesLine += "🟨";
     } else {
-      circlesLine += "⚪";
+      circlesLine += "⬜";
     }
   }
 
