@@ -171,8 +171,11 @@ function formatGuessResult(guess, result, isWinner) {
     }
   }
 
-  // Create letters line with spacing - add space inside the bold formatting
-  const letterLine = letters.map((l) => `** ${l} **`).join(""); // Space inside bold markers
+  // Create letters line with spacing - keep bold separate for each letter
+  const letterLine = letters
+    .map((l) => `**${l}** `)
+    .join("")
+    .trim(); // Bold each letter with space after
 
   // Create colored circles line with spacing to match letters
   let circlesLine = "";
