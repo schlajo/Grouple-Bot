@@ -437,26 +437,31 @@ client.on("messageCreate", async (message) => {
 
     const userId = message.author.id;
     const now = new Date();
-    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000); // 2 hours in milliseconds
+    const twoHoursInMs = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 
     // Check if player already guessed
     if (
       currentGame.guesses.has(userId) &&
       currentGame.guesses.get(userId).length > 0
     ) {
-      // Allow re-guess if no one has guessed in the last 2 hours
-      if (
-        currentGame.lastGuessTime &&
-        currentGame.lastGuessTime > twoHoursAgo
-      ) {
+      // Get the player's most recent guess timestamp
+      const playerGuesses = currentGame.guesses.get(userId);
+      const lastPlayerGuess = playerGuesses[playerGuesses.length - 1];
+      const timeSinceLastGuess = now - new Date(lastPlayerGuess.timestamp);
+
+      // Check if 2 hours have passed since THIS player's last guess
+      if (timeSinceLastGuess < twoHoursInMs) {
+        const minutesRemaining = Math.ceil(
+          (twoHoursInMs - timeSinceLastGuess) / 60000
+        );
         message.reply(
-          "❌ You already made your guess for today! You can guess again if no one guesses for 2 hours."
+          `❌ You already made a guess! You can guess again in ${minutesRemaining} minutes.`
         );
         return;
       } else {
         // Allow re-guess after 2 hours (keep old guess, add new one)
         message.reply(
-          "⏰ 2 hours have passed with no new guesses - you can try again!"
+          "⏰ 2 hours have passed since your last guess - you can try again!"
         );
       }
     }
@@ -567,22 +572,30 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    if (!currentGame.lastGuessTime) {
+    const userId = message.author.id;
+
+    // Check if the user has made any guesses
+    if (
+      !currentGame.guesses.has(userId) ||
+      currentGame.guesses.get(userId).length === 0
+    ) {
       message.reply(
-        "⏰ No guesses yet today - everyone can still make their first guess!"
+        "⏰ You haven't guessed yet - you can make your first guess anytime!"
       );
       return;
     }
 
+    // Get the player's most recent guess timestamp
+    const playerGuesses = currentGame.guesses.get(userId);
+    const lastPlayerGuess = playerGuesses[playerGuesses.length - 1];
     const now = new Date();
-    const twoHoursFromLastGuess = new Date(
-      currentGame.lastGuessTime.getTime() + 2 * 60 * 60 * 1000
-    );
-    const timeLeft = twoHoursFromLastGuess - now;
+    const twoHoursInMs = 2 * 60 * 60 * 1000;
+    const timeSinceLastGuess = now - new Date(lastPlayerGuess.timestamp);
+    const timeLeft = twoHoursInMs - timeSinceLastGuess;
 
     if (timeLeft <= 0) {
       message.reply(
-        "✅ 2 hours have passed! Players who already guessed can try again."
+        "✅ 2 hours have passed since your last guess! You can guess again."
       );
     } else {
       const hoursLeft = Math.floor(timeLeft / (60 * 60 * 1000));
@@ -590,7 +603,7 @@ client.on("messageCreate", async (message) => {
         (timeLeft % (60 * 60 * 1000)) / (60 * 1000)
       );
       message.reply(
-        `⏳ ${hoursLeft}h ${minutesLeft}m until re-guessing is allowed.`
+        `⏳ ${hoursLeft}h ${minutesLeft}m until you can guess again.`
       );
     }
     return;
@@ -792,7 +805,7 @@ client.on("messageCreate", async (message) => {
         {
           name: "!guess WORD",
           value:
-            "Make your guess (length matches current word, can re-guess after 2h of no activity)",
+            "Make your guess (length matches current word, can re-guess after 2h from your last guess)",
           inline: false,
         },
         {
@@ -802,7 +815,7 @@ client.on("messageCreate", async (message) => {
         },
         {
           name: "!wordle-time",
-          value: "Check time until re-guessing is allowed",
+          value: "Check time until you can re-guess (personal 2-hour cooldown)",
           inline: false,
         },
         {
