@@ -189,10 +189,7 @@ function formatGuessResult(guess, result, isWinner) {
   }
 
   const emoji = isWinner ? "🏆 " : "";
-  // Add spaces to indent boxes (approximate alignment with letters after username)
-  const indent =
-    "\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0"; // Non-breaking spaces for indent
-  return `${emoji}${letterLine}\n${indent}${circlesLine}`; // Indent boxes on second line
+  return `${emoji}${letterLine}\n${circlesLine}`; // Newline to put circles below letters
 }
 
 async function startNewGame(customWord = null) {
