@@ -171,8 +171,8 @@ function formatGuessResult(guess, result, isWinner) {
     }
   }
 
-  // Create letters line using code block to preserve spacing
-  const letterLine = "`" + letters.join(" ") + "`";
+  // Create letters line with dots as separators for visibility
+  const letterLine = "**" + letters.join(" · ") + "**"; // Use middot as separator
 
   // Create colored circles line without spacing (compact)
   let circlesLine = "";
