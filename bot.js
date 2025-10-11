@@ -171,8 +171,8 @@ function formatGuessResult(guess, result, isWinner) {
     }
   }
 
-  // Create letters line with dots as separators for visibility
-  const letterLine = "**" + letters.join(" · ") + "**"; // Use middot as separator
+  // Create letters line with dots as separators for visibility and alignment
+  const letterLine = "**· " + letters.join(" · ") + " ·**"; // Middot before, between, and after
 
   // Create colored circles line without spacing (compact)
   let circlesLine = "";
