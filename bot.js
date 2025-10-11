@@ -189,7 +189,7 @@ function formatGuessResult(guess, result, isWinner) {
   }
 
   const emoji = isWinner ? "🏆 " : "";
-  return `${emoji}${letterLine} ${circlesLine}`; // Space instead of newline
+  return `${emoji}${letterLine}\n${circlesLine}`; // Newline to put circles below letters
 }
 
 async function startNewGame(customWord = null) {
