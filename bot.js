@@ -171,18 +171,13 @@ function formatGuessResult(guess, result, isWinner) {
     }
   }
 
-  // Create letters line with spacing - keep bold separate for each letter
-  const letterLine = letters
-    .map((l) => `**${l}** `)
-    .join("")
-    .trim(); // Bold each letter with space after
+  // Create letters line using code block to preserve spacing
+  const letterLine = "`" + letters.join(" ") + "`";
 
-  // Create colored circles line with spacing to match letters
+  // Create colored circles line without spacing (compact)
   let circlesLine = "";
   for (let j = 0; j < boxes.length; j++) {
     const box = boxes[j] || "⬜";
-
-    if (j > 0) circlesLine += " "; // Add space between circles
 
     if (box === "🟩") {
       circlesLine += "🟢";
