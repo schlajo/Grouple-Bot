@@ -171,13 +171,15 @@ function formatGuessResult(guess, result, isWinner) {
     }
   }
 
-  // Create letters line
-  const letterLine = letters.map((l) => `**${l}**`).join(" ");
+  // Create letters line with wider spacing
+  const letterLine = letters.map((l) => `**${l}**`).join("  "); // Double space between letters
 
-  // Create colored circles line
+  // Create colored circles line with spacing to match letters
   let circlesLine = "";
   for (let j = 0; j < boxes.length; j++) {
     const box = boxes[j] || "⬜";
+
+    if (j > 0) circlesLine += " "; // Add space between circles
 
     if (box === "🟩") {
       circlesLine += "🟢";
