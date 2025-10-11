@@ -171,23 +171,22 @@ function formatGuessResult(guess, result, isWinner) {
     }
   }
 
-  // Create letters line with hyphens at ends and dots between letters
-  const letterLine = "**-" + letters.join(" · ") + "-**"; // Hyphens at ends, middots between
+  // Create letters line with single hyphens at ends and double hyphens between letters
+  const letterLine = "**-" + letters.join("--") + "-**"; // Single hyphen at ends, double hyphens between
 
-  // Create colored circles line with small spaces between them
-  const circleArray = [];
+  // Create colored circles line without spacing (compact)
+  let circlesLine = "";
   for (let j = 0; j < boxes.length; j++) {
     const box = boxes[j] || "⬜";
 
     if (box === "🟩") {
-      circleArray.push("🟢");
+      circlesLine += "🟢";
     } else if (box === "🟨") {
-      circleArray.push("🟡");
+      circlesLine += "🟡";
     } else {
-      circleArray.push("⚪");
+      circlesLine += "⚪";
     }
   }
-  const circlesLine = circleArray.join(" "); // Small space between circles
 
   const emoji = isWinner ? "🏆 " : "";
   return `${emoji}${letterLine}\n${circlesLine}`; // Newline to put circles below letters
