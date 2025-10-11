@@ -171,8 +171,8 @@ function formatGuessResult(guess, result, isWinner) {
     }
   }
 
-  // Create letters line with wider spacing using em spaces
-  const letterLine = letters.map((l) => `**${l}**`).join("\u2003"); // Em space between letters
+  // Create letters line with spacing - add space inside the bold formatting
+  const letterLine = letters.map((l) => `** ${l} **`).join(""); // Space inside bold markers
 
   // Create colored circles line with spacing to match letters
   let circlesLine = "";
