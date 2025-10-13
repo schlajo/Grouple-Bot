@@ -14,24 +14,52 @@ const client = new Client({
   ],
 });
 
-// Game state
-let currentGame = {
-  word: null,
-  guesses: new Map(), // userId -> {guess, result, timestamp}
-  date: null,
-  winners: new Set(),
-  isActive: false,
-  lastGuessTime: null, // Track when the last guess was made
-};
+// Game state - now per guild
+let guildGames = new Map(); // guildId -> game object
 
-// Pending host requests
-let pendingHosts = new Map(); // userId -> {channelId, timestamp}
+// Pending host requests - now per guild
+let guildPendingHosts = new Map(); // guildId -> Map(userId -> {channelId, timestamp})
 
-// Win tracking
-let playerStats = new Map(); // userId -> {wins: number, totalGames: number}
+// Win tracking - now per guild
+let guildPlayerStats = new Map(); // guildId -> Map(userId -> {wins, totalGames, totalGuesses})
+
+// Helper function to get or create game state for a guild
+function getGuildGame(guildId) {
+  if (!guildGames.has(guildId)) {
+    guildGames.set(guildId, {
+      word: null,
+      guesses: new Map(),
+      date: null,
+      winners: new Set(),
+      isActive: false,
+      lastGuessTime: null,
+      isCustomWord: false,
+      host: null,
+      gameId: null,
+    });
+  }
+  return guildGames.get(guildId);
+}
+
+// Helper function to get or create pending hosts for a guild
+function getGuildPendingHosts(guildId) {
+  if (!guildPendingHosts.has(guildId)) {
+    guildPendingHosts.set(guildId, new Map());
+  }
+  return guildPendingHosts.get(guildId);
+}
+
+// Helper function to get or create player stats for a guild
+function getGuildPlayerStats(guildId) {
+  if (!guildPlayerStats.has(guildId)) {
+    guildPlayerStats.set(guildId, new Map());
+  }
+  return guildPlayerStats.get(guildId);
+}
 
 // Database persistence functions
-async function saveGameState() {
+async function saveGameState(guildId) {
+  const currentGame = getGuildGame(guildId);
   if (currentGame.isActive) {
     const gameData = {
       word: currentGame.word,
@@ -44,7 +72,7 @@ async function saveGameState() {
       host: currentGame.host,
     };
 
-    const result = await database.saveGameState(gameData);
+    const result = await database.saveGameState(gameData, guildId);
     if (result.success && result.gameId) {
       currentGame.gameId = result.gameId;
     }
@@ -53,20 +81,27 @@ async function saveGameState() {
   return { success: true };
 }
 
-async function savePlayerStats() {
-  return await database.savePlayerStats(playerStats);
+async function savePlayerStats(guildId) {
+  const playerStats = getGuildPlayerStats(guildId);
+  return await database.savePlayerStats(playerStats, guildId);
 }
 
-async function loadPlayerStats() {
-  const stats = await database.loadPlayerStats();
-  playerStats = stats;
+async function loadPlayerStats(guildId) {
+  const stats = await database.loadPlayerStats(guildId);
+  guildPlayerStats.set(guildId, stats);
   return stats;
 }
 
-async function updatePlayerStats(userId, won, isNewGame = false) {
-  const result = await database.updatePlayerStats(userId, won, isNewGame);
+async function updatePlayerStats(guildId, userId, won, isNewGame = false) {
+  const result = await database.updatePlayerStats(
+    userId,
+    guildId,
+    won,
+    isNewGame
+  );
   if (result.success) {
     // Update local cache
+    const playerStats = getGuildPlayerStats(guildId);
     if (!playerStats.has(userId)) {
       playerStats.set(userId, { wins: 0, totalGames: 0, totalGuesses: 0 });
     }
@@ -83,10 +118,10 @@ async function updatePlayerStats(userId, won, isNewGame = false) {
   return result;
 }
 
-async function loadGameState() {
-  const gameState = await database.loadGameState();
+async function loadGameState(guildId) {
+  const gameState = await database.loadGameState(guildId);
   if (gameState) {
-    currentGame = gameState;
+    guildGames.set(guildId, gameState);
     return true;
   }
   return false;
@@ -192,17 +227,19 @@ function formatGuessResult(guess, result, isWinner) {
   return `${emoji}${letterLine}\n${circlesLine}`; // Newline to put circles below letters
 }
 
-async function startNewGame(customWord = null) {
+async function startNewGame(guildId, customWord = null) {
   const today = new Date().toLocaleDateString("en-US", {
     timeZone: "America/Chicago",
   });
+
+  const currentGame = getGuildGame(guildId);
 
   // Don't start a new game if one is already active
   if (currentGame.isActive) {
     return false;
   }
 
-  currentGame = {
+  const newGame = {
     word: customWord ? customWord.toUpperCase() : getRandomWord(),
     guesses: new Map(), // Will store userId -> array of guesses
     date: today,
@@ -214,18 +251,22 @@ async function startNewGame(customWord = null) {
     gameId: null,
   };
 
+  guildGames.set(guildId, newGame);
+
   console.log(
-    `New game started! ${
-      customWord ? "(Custom word set)" : `Word: ${currentGame.word} (Random)`
+    `New game started in guild ${guildId}! ${
+      customWord ? "(Custom word set)" : `Word: ${newGame.word} (Random)`
     }`
   );
 
   // Save game state to database
-  await saveGameState();
+  await saveGameState(guildId);
   return true;
 }
 
-async function endGame() {
+async function endGame(guildId) {
+  const currentGame = getGuildGame(guildId);
+
   // Update global stats if game was solved (has winners)
   if (currentGame.winners.size > 0 && currentGame.word) {
     // Calculate total guesses from all players
@@ -250,9 +291,9 @@ async function endGame() {
   }
 
   // Clear local game state
-  currentGame = {
+  guildGames.set(guildId, {
     word: null,
-    guesses: new Map(), // Will store userId -> array of guesses
+    guesses: new Map(),
     date: null,
     winners: new Set(),
     isActive: false,
@@ -260,9 +301,9 @@ async function endGame() {
     isCustomWord: false,
     host: null,
     gameId: null,
-  };
+  });
 
-  console.log("Game ended and cleared from database");
+  console.log(`Game ended in guild ${guildId} and cleared from database`);
 }
 
 // Bot events
@@ -277,20 +318,27 @@ client.once("clientReady", async () => {
     );
   }
 
-  // Load player stats from database
-  await loadPlayerStats();
+  // Load player stats and game state for all guilds the bot is in
+  for (const [guildId, guild] of client.guilds.cache) {
+    console.log(`Loading data for guild: ${guild.name} (${guildId})`);
 
-  // Load pending hosts from database
-  const pendingHostsFromDB = await database.loadPendingHosts();
-  pendingHosts = pendingHostsFromDB;
+    // Load player stats from database
+    await loadPlayerStats(guildId);
 
-  // Try to restore game state on startup
-  const gameRestored = await loadGameState();
-  if (gameRestored) {
-    console.log("Game restored from database!");
-  } else {
-    console.log("No active game found, waiting for 9 AM or commands...");
+    // Load pending hosts from database
+    const pendingHostsFromDB = await database.loadPendingHosts(guildId);
+    guildPendingHosts.set(guildId, pendingHostsFromDB);
+
+    // Try to restore game state on startup
+    const gameRestored = await loadGameState(guildId);
+    if (gameRestored) {
+      console.log(`Game restored for guild ${guild.name}!`);
+    } else {
+      console.log(`No active game found for guild ${guild.name}`);
+    }
   }
+
+  console.log("All guilds loaded. Waiting for 9 AM or commands...");
 
   // Clean up old data
   await database.cleanupOldData();
@@ -309,70 +357,78 @@ client.on("messageCreate", async (message) => {
     );
     const userId = message.author.id;
 
-    if (pendingHosts.has(userId)) {
-      console.log(`Processing custom word from ${message.author.username}`);
-      const customWord = message.content.toUpperCase().trim();
+    // Check all guilds for pending host requests from this user
+    for (const [guildId, pendingHosts] of guildPendingHosts) {
+      if (pendingHosts.has(userId)) {
+        console.log(
+          `Processing custom word from ${message.author.username} for guild ${guildId}`
+        );
+        const customWord = message.content.toUpperCase().trim();
 
-      // Validate the word
-      if (customWord.length < 3 || customWord.length > 10) {
-        message.reply("❌ Word must be 3-10 letters long! Try again.");
+        // Validate the word
+        if (customWord.length < 3 || customWord.length > 10) {
+          message.reply("❌ Word must be 3-10 letters long! Try again.");
+          return;
+        }
+
+        if (!/^[A-Z]+$/.test(customWord)) {
+          message.reply("❌ Word must contain only letters! Try again.");
+          return;
+        }
+
+        // Get the original channel
+        const hostData = pendingHosts.get(userId);
+        const channel = client.channels.cache.get(hostData.channelId);
+
+        if (channel && (await startNewGame(guildId, customWord))) {
+          // Store the host information
+          const currentGame = getGuildGame(guildId);
+          currentGame.host = userId;
+
+          // Save game state after setting host
+          await saveGameState(guildId);
+
+          const embed = new EmbedBuilder()
+            .setColor(0xffd700)
+            .setTitle("🎯 Custom Grouple Challenge!")
+            .setDescription(
+              `${message.author.username} has chosen a **${currentGame.word.length}-letter word** for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
+            )
+            .addFields(
+              {
+                name: "Word Pattern",
+                value: "_ ".repeat(currentGame.word.length).trim(),
+                inline: true,
+              },
+              { name: "Host", value: message.author.username, inline: true }
+            )
+            .setFooter({ text: "Good luck everyone! 🍀" });
+
+          channel.send({ embeds: [embed] });
+          message.reply(
+            "✅ Your custom Grouple game has been started in the server! Good luck to everyone!"
+          );
+
+          // Clear the pending request from database
+          await database.removePendingHost(userId, guildId);
+          pendingHosts.delete(userId);
+        } else {
+          message.reply(
+            "❌ Could not start the game. There might already be an active game today."
+          );
+          await database.removePendingHost(userId, guildId);
+          pendingHosts.delete(userId);
+        }
         return;
       }
-
-      if (!/^[A-Z]+$/.test(customWord)) {
-        message.reply("❌ Word must contain only letters! Try again.");
-        return;
-      }
-
-      // Get the original channel
-      const hostData = pendingHosts.get(userId);
-      const channel = client.channels.cache.get(hostData.channelId);
-
-      if (channel && (await startNewGame(customWord))) {
-        // Store the host information
-        currentGame.host = userId;
-
-        // Save game state after setting host
-        await saveGameState();
-
-        const embed = new EmbedBuilder()
-          .setColor(0xffd700)
-          .setTitle("🎯 Custom Grouple Challenge!")
-          .setDescription(
-            `${message.author.username} has chosen a **${currentGame.word.length}-letter word** for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
-          )
-          .addFields(
-            {
-              name: "Word Pattern",
-              value: "_ ".repeat(currentGame.word.length).trim(),
-              inline: true,
-            },
-            { name: "Host", value: message.author.username, inline: true }
-          )
-          .setFooter({ text: "Good luck everyone! 🍀" });
-
-        channel.send({ embeds: [embed] });
-        message.reply(
-          "✅ Your custom Grouple game has been started in the server! Good luck to everyone!"
-        );
-
-        // Clear the pending request from database
-        await database.removePendingHost(userId);
-        pendingHosts.delete(userId);
-      } else {
-        message.reply(
-          "❌ Could not start the game. There might already be an active game today."
-        );
-        await database.removePendingHost(userId);
-        pendingHosts.delete(userId);
-      }
-      return;
     }
   }
 
   // Manual start command (for testing or manual games)
   if (content === "!start-wordle") {
-    if (await startNewGame()) {
+    const guildId = message.guild.id;
+    if (await startNewGame(guildId)) {
+      const currentGame = getGuildGame(guildId);
       const embed = new EmbedBuilder()
         .setColor(0x00ff00)
         .setTitle("🎯 Grouple Challenge!")
@@ -398,7 +454,13 @@ client.on("messageCreate", async (message) => {
 
   // Host custom word command - Step 1: Request to host
   if (content === "!host-wordle") {
-    console.log(`${message.author.username} wants to host a custom word game`);
+    const guildId = message.guild.id;
+    const currentGame = getGuildGame(guildId);
+    const pendingHosts = getGuildPendingHosts(guildId);
+
+    console.log(
+      `${message.author.username} wants to host a custom word game in guild ${guildId}`
+    );
 
     if (currentGame.isActive) {
       message.reply(
@@ -410,6 +472,7 @@ client.on("messageCreate", async (message) => {
     // Store the pending host request in database
     const result = await database.savePendingHost(
       message.author.id,
+      guildId,
       message.channel.id
     );
     if (result.success) {
@@ -417,7 +480,9 @@ client.on("messageCreate", async (message) => {
         channelId: message.channel.id,
         timestamp: new Date(),
       });
-      console.log(`Stored pending host request for ${message.author.username}`);
+      console.log(
+        `Stored pending host request for ${message.author.username} in guild ${guildId}`
+      );
     }
 
     // DM the user asking for their word
@@ -434,7 +499,7 @@ client.on("messageCreate", async (message) => {
       message.reply(
         "❌ I couldn't send you a DM! Please enable DMs from server members and try again."
       );
-      await database.removePendingHost(message.author.id);
+      await database.removePendingHost(message.author.id, guildId);
       pendingHosts.delete(message.author.id);
     }
     return;
@@ -442,6 +507,9 @@ client.on("messageCreate", async (message) => {
 
   // Guess command
   if (content.startsWith("!guess ")) {
+    const guildId = message.guild.id;
+    const currentGame = getGuildGame(guildId);
+
     if (!currentGame.isActive) {
       message.reply(
         "❌ No active game! Use `!start-wordle` to start one manually."
@@ -510,10 +578,10 @@ client.on("messageCreate", async (message) => {
     if (isWinner) {
       currentGame.winners.add(userId);
       // Update player stats (count as new game if first guess, otherwise just win)
-      await updatePlayerStats(userId, true, isFirstGuessInThisGame);
+      await updatePlayerStats(guildId, userId, true, isFirstGuessInThisGame);
     } else {
       // Update player stats (count as new game if first guess)
-      await updatePlayerStats(userId, false, isFirstGuessInThisGame);
+      await updatePlayerStats(guildId, userId, false, isFirstGuessInThisGame);
     }
 
     // Store guess with timestamp and update last guess time
@@ -531,7 +599,7 @@ client.on("messageCreate", async (message) => {
     currentGame.lastGuessTime = timestamp;
 
     // Save game state after each guess
-    await saveGameState();
+    await saveGameState(guildId);
 
     // Send result
     const embed = new EmbedBuilder()
@@ -548,11 +616,12 @@ client.on("messageCreate", async (message) => {
     if (isWinner) {
       // Wait a moment for the winner message to be seen, then end game
       setTimeout(async () => {
-        let description = `**The word was: ${currentGame.word}**\n\n`;
+        const gameToEnd = getGuildGame(guildId);
+        let description = `**The word was: ${gameToEnd.word}**\n\n`;
 
-        if (currentGame.winners.size > 0) {
+        if (gameToEnd.winners.size > 0) {
           description += "🏆 **Winners:**\n";
-          for (const winnerId of currentGame.winners) {
+          for (const winnerId of gameToEnd.winners) {
             try {
               const user = await client.users.fetch(winnerId);
               description += `• ${user.username}\n`;
@@ -562,9 +631,9 @@ client.on("messageCreate", async (message) => {
           }
         }
 
-        if (currentGame.guesses.size > 0) {
+        if (gameToEnd.guesses.size > 0) {
           description += "\n**All Guesses:**\n";
-          for (const [userId, guessesArray] of currentGame.guesses) {
+          for (const [userId, guessesArray] of gameToEnd.guesses) {
             try {
               const user = await client.users.fetch(userId);
               for (const guessData of guessesArray) {
@@ -589,7 +658,7 @@ client.on("messageCreate", async (message) => {
           });
 
         message.channel.send({ embeds: [endEmbed] });
-        await endGame();
+        await endGame(guildId);
       }, 2000); // 2 second delay
     }
 
@@ -598,6 +667,9 @@ client.on("messageCreate", async (message) => {
 
   // Show time until re-guess is allowed
   if (content === "!wordle-time") {
+    const guildId = message.guild.id;
+    const currentGame = getGuildGame(guildId);
+
     if (!currentGame.isActive) {
       message.reply(
         "❌ No active game! Use `!start-wordle` to start one manually."
@@ -644,6 +716,9 @@ client.on("messageCreate", async (message) => {
 
   // Show player stats
   if (content === "!wordle-stats") {
+    const guildId = message.guild.id;
+    const playerStats = getGuildPlayerStats(guildId);
+
     if (playerStats.size === 0) {
       message.reply(
         "📊 No player statistics yet! Play some games to see your stats."
@@ -739,6 +814,9 @@ client.on("messageCreate", async (message) => {
 
   // Show current game status
   if (content === "!wordle-status") {
+    const guildId = message.guild.id;
+    const currentGame = getGuildGame(guildId);
+
     if (!currentGame.isActive) {
       message.reply(
         "❌ No active game! Use `!start-wordle` to start one manually."
@@ -784,6 +862,9 @@ client.on("messageCreate", async (message) => {
 
   // End game command (for testing)
   if (content === "!end-wordle") {
+    const guildId = message.guild.id;
+    const currentGame = getGuildGame(guildId);
+
     if (!currentGame.isActive) {
       message.reply("❌ No active game to end!");
       return;
@@ -824,7 +905,7 @@ client.on("messageCreate", async (message) => {
       });
 
     message.channel.send({ embeds: [embed] });
-    await endGame();
+    await endGame(guildId);
     return;
   }
 
@@ -900,11 +981,15 @@ client.on("messageCreate", async (message) => {
 cron.schedule(
   "0 9 * * *",
   async () => {
-    console.log("🌅 9 AM - Starting daily Grouple game!");
+    console.log("🌅 9 AM - Starting daily Grouple games for all guilds!");
 
-    if (await startNewGame()) {
-      // Find all channels the bot has access to and send the daily message
-      client.guilds.cache.forEach((guild) => {
+    // Start a new game for each guild
+    for (const [guildId, guild] of client.guilds.cache) {
+      console.log(`Starting game for guild: ${guild.name} (${guildId})`);
+
+      if (await startNewGame(guildId)) {
+        const currentGame = getGuildGame(guildId);
+
         // Try to find a general channel or the first text channel available
         const channel =
           guild.channels.cache.find(
@@ -935,9 +1020,17 @@ cron.schedule(
             });
 
           channel.send({ embeds: [embed] }).catch(console.error);
+        } else {
+          console.log(`No suitable channel found for guild ${guild.name}`);
         }
-      });
+      } else {
+        console.log(
+          `Could not start game for guild ${guild.name} (already active)`
+        );
+      }
     }
+
+    console.log("Daily game start completed for all guilds!");
   },
   {
     scheduled: true,

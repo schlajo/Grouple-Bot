@@ -13,16 +13,21 @@ class Database {
   }
 
   // Game management functions
-  async saveGameState(gameData) {
+  async saveGameState(gameData, guildId) {
     try {
       if (!gameData.isActive) {
         return { success: true, message: "Game not active, skipping save" };
       }
 
-      // Check if a game already exists for today
+      if (!guildId) {
+        throw new Error("guildId is required for saveGameState");
+      }
+
+      // Check if a game already exists for today in this guild
       const { data: existingGame, error: fetchError } = await this.client
         .from("games")
         .select("id")
+        .eq("guild_id", guildId)
         .eq("date", gameData.date)
         .eq("is_active", true)
         .single();
@@ -33,6 +38,7 @@ class Database {
       }
 
       const gameRecord = {
+        guild_id: guildId,
         word: gameData.word,
         date: gameData.date,
         is_active: gameData.isActive,
@@ -63,7 +69,7 @@ class Database {
 
       // Save all guesses for this game
       if (gameData.guesses && gameData.guesses.size > 0) {
-        await this.saveGuesses(gameId, gameData.guesses);
+        await this.saveGuesses(gameId, guildId, gameData.guesses);
       }
 
       console.log("Game state saved successfully to database");
@@ -74,12 +80,17 @@ class Database {
     }
   }
 
-  async loadGameState() {
+  async loadGameState(guildId) {
     try {
-      // Get any active game (regardless of date)
+      if (!guildId) {
+        throw new Error("guildId is required for loadGameState");
+      }
+
+      // Get any active game for this guild (regardless of date)
       const { data: game, error: gameError } = await this.client
         .from("games")
         .select("*")
+        .eq("guild_id", guildId)
         .eq("is_active", true)
         .single();
 
@@ -149,8 +160,12 @@ class Database {
     }
   }
 
-  async saveGuesses(gameId, guessesMap) {
+  async saveGuesses(gameId, guildId, guessesMap) {
     try {
+      if (!guildId) {
+        throw new Error("guildId is required for saveGuesses");
+      }
+
       // Get existing guesses for this game
       const { data: existingGuesses, error: fetchError } = await this.client
         .from("guesses")
@@ -177,6 +192,7 @@ class Database {
           if (!existingGuessIds.has(guessId)) {
             guessesToInsert.push({
               game_id: gameId,
+              guild_id: guildId,
               user_id: userId,
               guess: guessData.guess,
               result: guessData.result,
@@ -223,11 +239,16 @@ class Database {
   }
 
   // Player stats functions
-  async savePlayerStats(playerStatsMap) {
+  async savePlayerStats(playerStatsMap, guildId) {
     try {
+      if (!guildId) {
+        throw new Error("guildId is required for savePlayerStats");
+      }
+
       const statsArray = Array.from(playerStatsMap.entries()).map(
         ([userId, stats]) => ({
           user_id: userId,
+          guild_id: guildId,
           wins: stats.wins,
           total_games: stats.totalGames,
           total_guesses: stats.totalGuesses || 0,
@@ -238,7 +259,7 @@ class Database {
       // Use upsert to handle both inserts and updates
       const { error } = await this.client
         .from("player_stats")
-        .upsert(statsArray, { onConflict: "user_id" });
+        .upsert(statsArray, { onConflict: "user_id,guild_id" });
 
       if (error) {
         throw error;
@@ -252,11 +273,16 @@ class Database {
     }
   }
 
-  async loadPlayerStats() {
+  async loadPlayerStats(guildId) {
     try {
+      if (!guildId) {
+        throw new Error("guildId is required for loadPlayerStats");
+      }
+
       const { data, error } = await this.client
         .from("player_stats")
-        .select("*");
+        .select("*")
+        .eq("guild_id", guildId);
 
       if (error) {
         throw error;
@@ -279,13 +305,18 @@ class Database {
     }
   }
 
-  async updatePlayerStats(userId, won, isNewGame = false) {
+  async updatePlayerStats(userId, guildId, won, isNewGame = false) {
     try {
-      // First, try to get existing stats
+      if (!guildId) {
+        throw new Error("guildId is required for updatePlayerStats");
+      }
+
+      // First, try to get existing stats for this user in this guild
       const { data: existingStats, error: fetchError } = await this.client
         .from("player_stats")
         .select("*")
         .eq("user_id", userId)
+        .eq("guild_id", guildId)
         .single();
 
       let newStats;
@@ -293,6 +324,7 @@ class Database {
         // No existing stats, create new
         newStats = {
           user_id: userId,
+          guild_id: guildId,
           wins: won ? 1 : 0,
           total_games: isNewGame ? 1 : 0,
           total_guesses: 1,
@@ -303,6 +335,7 @@ class Database {
         // Update existing stats
         newStats = {
           user_id: userId,
+          guild_id: guildId,
           wins: existingStats.wins + (won ? 1 : 0),
           total_games: existingStats.total_games + (isNewGame ? 1 : 0),
           total_guesses: existingStats.total_guesses + 1,
@@ -311,7 +344,7 @@ class Database {
 
       const { error } = await this.client
         .from("player_stats")
-        .upsert(newStats, { onConflict: "user_id" });
+        .upsert(newStats, { onConflict: "user_id,guild_id" });
 
       if (error) {
         throw error;
@@ -328,15 +361,20 @@ class Database {
   }
 
   // Pending hosts functions
-  async savePendingHost(userId, channelId) {
+  async savePendingHost(userId, guildId, channelId) {
     try {
+      if (!guildId) {
+        throw new Error("guildId is required for savePendingHost");
+      }
+
       const { error } = await this.client.from("pending_hosts").upsert(
         {
           user_id: userId,
+          guild_id: guildId,
           channel_id: channelId,
           created_at: new Date().toISOString(),
         },
-        { onConflict: "user_id" }
+        { onConflict: "user_id,guild_id" }
       );
 
       if (error) {
@@ -351,11 +389,16 @@ class Database {
     }
   }
 
-  async loadPendingHosts() {
+  async loadPendingHosts(guildId) {
     try {
+      if (!guildId) {
+        throw new Error("guildId is required for loadPendingHosts");
+      }
+
       const { data, error } = await this.client
         .from("pending_hosts")
-        .select("*");
+        .select("*")
+        .eq("guild_id", guildId);
 
       if (error) {
         throw error;
@@ -379,12 +422,17 @@ class Database {
     }
   }
 
-  async removePendingHost(userId) {
+  async removePendingHost(userId, guildId) {
     try {
+      if (!guildId) {
+        throw new Error("guildId is required for removePendingHost");
+      }
+
       const { error } = await this.client
         .from("pending_hosts")
         .delete()
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .eq("guild_id", guildId);
 
       if (error) {
         throw error;
