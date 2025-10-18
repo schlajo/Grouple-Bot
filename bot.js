@@ -1,6 +1,7 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 const cron = require("node-cron");
 const fs = require("fs");
+const http = require("http");
 const database = require("./database");
 require("dotenv").config();
 
@@ -12,6 +13,16 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
   ],
+});
+
+// HTTP server for Render health checks
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Grouple Bot is running!");
+});
+server.listen(PORT, () => {
+  console.log(`✅ Health check server running on port ${PORT}`);
 });
 
 // Game state - now per guild
