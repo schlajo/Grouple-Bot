@@ -980,7 +980,7 @@ client.on("messageCreate", async (message) => {
         inline: false,
       })
       .setFooter({
-        text: "New games start automatically at 9 AM! Games run indefinitely until solved! 🌅",
+        text: "Use !start-wordle or !host-wordle to start a new game! Games run indefinitely until solved! 🌅",
       });
 
     message.channel.send({ embeds: [embed] });
@@ -988,67 +988,7 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// Schedule daily game at 9 AM
-cron.schedule(
-  "0 9 * * *",
-  async () => {
-    console.log("🌅 9 AM - Starting daily Grouple games for all guilds!");
-
-    // Start a new game for each guild
-    for (const [guildId, guild] of client.guilds.cache) {
-      console.log(`Starting game for guild: ${guild.name} (${guildId})`);
-
-      if (await startNewGame(guildId)) {
-        const currentGame = getGuildGame(guildId);
-
-        // Try to find a general channel or the first text channel available
-        const channel =
-          guild.channels.cache.find(
-            (ch) =>
-              ch.name.includes("general") ||
-              ch.name.includes("wordle") ||
-              ch.name.includes("games") ||
-              ch.name.includes("chat")
-          ) || guild.channels.cache.filter((ch) => ch.type === 0).first(); // First text channel
-
-        if (channel) {
-          const embed = new EmbedBuilder()
-            .setColor(0x00ff00)
-            .setTitle("🌅 Good Morning! New Grouple Game!")
-            .setDescription(
-              `A new **${currentGame.word.length}-letter word** has been chosen for today!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
-            )
-            .addFields(
-              {
-                name: "Word Pattern",
-                value: "_ ".repeat(currentGame.word.length).trim(),
-                inline: true,
-              },
-              { name: "Time Left", value: "All day!", inline: true }
-            )
-            .setFooter({
-              text: "Good luck everyone! 🍀 Type !wordle-help for commands",
-            });
-
-          channel.send({ embeds: [embed] }).catch(console.error);
-        } else {
-          console.log(`No suitable channel found for guild ${guild.name}`);
-        }
-      } else {
-        console.log(
-          `Could not start game for guild ${guild.name} (already active)`
-        );
-      }
-    }
-
-    console.log("Daily game start completed for all guilds!");
-  },
-  {
-    scheduled: true,
-    timezone: "America/Chicago", // Central Time (St. Louis)
-  }
-);
-
+// Removed daily auto-start - games now started manually with !start-wordle or !host-wordle
 // Removed daily auto-end - games now run until solved or manually ended
 
 // Error handling
