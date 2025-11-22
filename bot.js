@@ -403,7 +403,7 @@ client.on("messageCreate", async (message) => {
             .setColor(0xffd700)
             .setTitle("🎯 Custom Grouple Challenge!")
             .setDescription(
-              `${message.author.username} has chosen a **${currentGame.word.length}-letter word** for everyone!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
+              `${message.author.username} has chosen a **${currentGame.word.length}-letter word** for everyone!\n\nType \`!guess WORD\` to make your guess.`
             )
             .addFields(
               {
@@ -444,7 +444,7 @@ client.on("messageCreate", async (message) => {
         .setColor(0x00ff00)
         .setTitle("🎯 Grouple Challenge!")
         .setDescription(
-          `A new **${currentGame.word.length}-letter word** has been chosen!\n\nType \`!guess WORD\` to make your guess.\nEveryone gets ONE guess!`
+          `A new **${currentGame.word.length}-letter word** has been chosen!\n\nType \`!guess WORD\` to make your guess.`
         )
         .addFields(
           {
@@ -549,7 +549,7 @@ client.on("messageCreate", async (message) => {
 
     const userId = message.author.id;
     const now = new Date();
-    const twoHoursInMs = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+    const oneHourInMs = 1 * 60 * 60 * 1000; // 1 hour in milliseconds
 
     // Check if player already guessed
     if (
@@ -561,19 +561,19 @@ client.on("messageCreate", async (message) => {
       const lastPlayerGuess = playerGuesses[playerGuesses.length - 1];
       const timeSinceLastGuess = now - new Date(lastPlayerGuess.timestamp);
 
-      // Check if 2 hours have passed since THIS player's last guess
-      if (timeSinceLastGuess < twoHoursInMs) {
+      // Check if 1 hour has passed since THIS player's last guess
+      if (timeSinceLastGuess < oneHourInMs) {
         const minutesRemaining = Math.ceil(
-          (twoHoursInMs - timeSinceLastGuess) / 60000
+          (oneHourInMs - timeSinceLastGuess) / 60000
         );
         message.reply(
           `❌ You already made a guess! You can guess again in ${minutesRemaining} minutes.`
         );
         return;
       } else {
-        // Allow re-guess after 2 hours (keep old guess, add new one)
+        // Allow re-guess after 1 hour (keep old guess, add new one)
         message.reply(
-          "⏰ 2 hours have passed since your last guess - you can try again!"
+          "⏰ 1 hour has passed since your last guess - you can try again!"
         );
       }
     }
@@ -705,13 +705,13 @@ client.on("messageCreate", async (message) => {
     const playerGuesses = currentGame.guesses.get(userId);
     const lastPlayerGuess = playerGuesses[playerGuesses.length - 1];
     const now = new Date();
-    const twoHoursInMs = 2 * 60 * 60 * 1000;
+    const oneHourInMs = 1 * 60 * 60 * 1000;
     const timeSinceLastGuess = now - new Date(lastPlayerGuess.timestamp);
-    const timeLeft = twoHoursInMs - timeSinceLastGuess;
+    const timeLeft = oneHourInMs - timeSinceLastGuess;
 
     if (timeLeft <= 0) {
       message.reply(
-        "✅ 2 hours have passed since your last guess! You can guess again."
+        "✅ 1 hour has passed since your last guess! You can guess again."
       );
     } else {
       const hoursLeft = Math.floor(timeLeft / (60 * 60 * 1000));
@@ -930,7 +930,7 @@ client.on("messageCreate", async (message) => {
         {
           name: "!guess WORD",
           value:
-            "Make your guess (length matches current word, can re-guess after 2h from your last guess)",
+            "Make your guess (length matches current word, can re-guess after 1h from your last guess)",
           inline: false,
         },
         {
@@ -940,7 +940,7 @@ client.on("messageCreate", async (message) => {
         },
         {
           name: "!wordle-time",
-          value: "Check time until you can re-guess (personal 2-hour cooldown)",
+          value: "Check time until you can re-guess (personal 1-hour cooldown)",
           inline: false,
         },
         {
