@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS global_stats (
     word_length_7_guesses INTEGER DEFAULT 0,
     word_length_8_solved INTEGER DEFAULT 0,
     word_length_8_guesses INTEGER DEFAULT 0,
+    word_length_9_solved INTEGER DEFAULT 0,
+    word_length_9_guesses INTEGER DEFAULT 0,
+    word_length_10_solved INTEGER DEFAULT 0,
+    word_length_10_guesses INTEGER DEFAULT 0,
     
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

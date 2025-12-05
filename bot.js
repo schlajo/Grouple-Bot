@@ -744,7 +744,7 @@ client.on("messageCreate", async (message) => {
 
     let description = "🏆 **Leaderboard**\n\n";
 
-    for (let i = 0; i < Math.min(sortedStats.length, 10); i++) {
+    for (let i = 0; i < Math.min(sortedStats.length, 25); i++) {
       const [userId, stats] = sortedStats[i];
       try {
         const user = await client.users.fetch(userId);
@@ -802,14 +802,32 @@ client.on("messageCreate", async (message) => {
     description += `\n`;
 
     description += `🔤 **By Word Length**\n`;
-    const wordLengths = [3, 4, 5, 6, 7, 8];
+    const wordLengths = [3, 4, 5, 6, 7, 8, 9, 10];
+    const wordStats = await database.getWordStatsByLength();
+    
     for (const length of wordLengths) {
       const solved = stats[`word_length_${length}_solved`];
       const guesses = stats[`word_length_${length}_guesses`];
       if (solved > 0) {
         description += `• ${length} letters: ${solved} solved (${guesses} guesses) - Avg: ${(
           guesses / solved
-        ).toFixed(1)}\n`;
+        ).toFixed(1)}`;
+        
+        // Add most/least guessed words if available
+        const lengthStats = wordStats[length];
+        if (lengthStats) {
+          const parts = [];
+          if (lengthStats.mostGuesses) {
+            parts.push(`Most: ${lengthStats.mostGuesses.word} (${lengthStats.mostGuesses.guesses})`);
+          }
+          if (lengthStats.leastGuesses) {
+            parts.push(`Least: ${lengthStats.leastGuesses.word} (${lengthStats.leastGuesses.guesses})`);
+          }
+          if (parts.length > 0) {
+            description += ` | ${parts.join(", ")}`;
+          }
+        }
+        description += `\n`;
       }
     }
 

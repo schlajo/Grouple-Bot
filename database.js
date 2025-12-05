@@ -524,6 +524,10 @@ class Database {
         word_length_7_guesses: 0,
         word_length_8_solved: 0,
         word_length_8_guesses: 0,
+        word_length_9_solved: 0,
+        word_length_9_guesses: 0,
+        word_length_10_solved: 0,
+        word_length_10_guesses: 0,
       };
 
       // Update overall stats
@@ -558,10 +562,107 @@ class Database {
       console.log(
         `Updated global stats: ${stats.games_solved} games solved, ${stats.total_guesses_in_solved_games} total guesses`
       );
+
+      // Also update word stats
+      await this.updateWordStats(gameData.word, totalGuesses);
+
       return { success: true };
     } catch (error) {
       console.error("Error updating global stats:", error);
       return { success: false, error: error.message };
+    }
+  }
+
+  async updateWordStats(word, totalGuesses) {
+    try {
+      const wordLength = word.length;
+
+      // Get existing word stats
+      const { data: existingStats, error: fetchError } = await this.client
+        .from("word_stats")
+        .select("*")
+        .eq("word", word)
+        .single();
+
+      let newStats;
+      if (fetchError && fetchError.code === "PGRST116") {
+        // No existing stats, create new
+        newStats = {
+          word: word,
+          word_length: wordLength,
+          times_played: 1,
+          total_guesses_all_games: totalGuesses,
+          average_guesses: totalGuesses,
+          min_guesses: totalGuesses,
+          max_guesses: totalGuesses,
+        };
+      } else if (fetchError) {
+        throw fetchError;
+      } else {
+        // Update existing stats
+        const newTimesPlayed = existingStats.times_played + 1;
+        const newTotalGuesses = existingStats.total_guesses_all_games + totalGuesses;
+        newStats = {
+          word: word,
+          word_length: wordLength,
+          times_played: newTimesPlayed,
+          total_guesses_all_games: newTotalGuesses,
+          average_guesses: Math.round((newTotalGuesses / newTimesPlayed) * 100) / 100,
+          min_guesses: Math.min(existingStats.min_guesses, totalGuesses),
+          max_guesses: Math.max(existingStats.max_guesses, totalGuesses),
+        };
+      }
+
+      const { error } = await this.client
+        .from("word_stats")
+        .upsert(newStats, { onConflict: "word" });
+
+      if (error) {
+        throw error;
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error("Error updating word stats:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getWordStatsByLength() {
+    try {
+      // Get the word with most guesses and least guesses for each word length
+      const wordLengths = [3, 4, 5, 6, 7, 8, 9, 10];
+      const result = {};
+
+      for (const length of wordLengths) {
+        // Get word with most guesses (max_guesses)
+        const { data: maxWord, error: maxError } = await this.client
+          .from("word_stats")
+          .select("word, max_guesses")
+          .eq("word_length", length)
+          .order("max_guesses", { ascending: false })
+          .limit(1)
+          .single();
+
+        // Get word with least guesses (min_guesses)
+        const { data: minWord, error: minError } = await this.client
+          .from("word_stats")
+          .select("word, min_guesses")
+          .eq("word_length", length)
+          .order("min_guesses", { ascending: true })
+          .limit(1)
+          .single();
+
+        result[length] = {
+          mostGuesses: maxError || !maxWord ? null : { word: maxWord.word, guesses: maxWord.max_guesses },
+          leastGuesses: minError || !minWord ? null : { word: minWord.word, guesses: minWord.min_guesses },
+        };
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Error getting word stats by length:", error);
+      return {};
     }
   }
 
@@ -595,6 +696,10 @@ class Database {
             word_length_7_guesses: 0,
             word_length_8_solved: 0,
             word_length_8_guesses: 0,
+            word_length_9_solved: 0,
+            word_length_9_guesses: 0,
+            word_length_10_solved: 0,
+            word_length_10_guesses: 0,
           };
         }
         throw error;
