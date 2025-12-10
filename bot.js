@@ -1013,17 +1013,31 @@ client.on("messageCreate", async (message) => {
 client.on("error", console.error);
 
 // Login
-const token = process.env.DISCORD_TOKEN;
+const token = process.env.DISCORD_TOKEN?.trim();
 console.log("Attempting to connect to Discord...");
 console.log(`Token exists: ${!!token}, Token length: ${token ? token.length : 0}`);
 
 if (!token) {
   console.error("❌ DISCORD_TOKEN environment variable is not set!");
 } else {
+  // Set a timeout to detect hanging login
+  const loginTimeout = setTimeout(() => {
+    console.error("⚠️ Login is taking too long (>30s) - connection may be blocked or token invalid");
+  }, 30000);
+
   client.login(token)
-    .then(() => console.log("Discord login initiated successfully"))
+    .then(() => {
+      clearTimeout(loginTimeout);
+      console.log("Discord login initiated successfully");
+    })
     .catch((error) => {
+      clearTimeout(loginTimeout);
       console.error("❌ Failed to login to Discord:", error.message);
-      console.error("Check that DISCORD_TOKEN is set correctly in environment variables");
+      console.error("Full error:", error);
     });
 }
+
+// Catch any unhandled errors
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
