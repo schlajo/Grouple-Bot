@@ -318,7 +318,7 @@ async function endGame(guildId) {
 }
 
 // Bot events
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   console.log(`🎯 ${client.user.tag} is ready for Grouple!`);
 
   // Test database connection
