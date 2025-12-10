@@ -5,6 +5,9 @@ const http = require("http");
 const database = require("./database");
 require("dotenv").config();
 
+// Enable debug logging
+process.env.DEBUG = 'discord.js:*';
+
 // Bot setup
 const client = new Client({
   intents: [
@@ -1009,8 +1012,14 @@ client.on("messageCreate", async (message) => {
 // Removed daily auto-start - games now started manually with !start-wordle or !host-wordle
 // Removed daily auto-end - games now run until solved or manually ended
 
-// Error handling
-client.on("error", console.error);
+// Error handling and debug events
+client.on("error", (error) => console.error("Client error:", error));
+client.on("warn", (warning) => console.warn("Client warning:", warning));
+client.on("debug", (info) => console.log("Debug:", info));
+client.on("invalidated", () => console.error("Client session invalidated!"));
+client.on("shardError", (error) => console.error("Shard error:", error));
+client.on("shardDisconnect", (event, id) => console.log("Shard disconnected:", id, event));
+client.on("shardReconnecting", (id) => console.log("Shard reconnecting:", id));
 
 // Login
 const token = process.env.DISCORD_TOKEN?.trim();
