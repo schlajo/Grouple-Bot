@@ -1013,4 +1013,10 @@ client.on("messageCreate", async (message) => {
 client.on("error", console.error);
 
 // Login
-client.login(process.env.DISCORD_TOKEN);
+console.log("Attempting to connect to Discord...");
+client.login(process.env.DISCORD_TOKEN)
+  .then(() => console.log("Discord login initiated successfully"))
+  .catch((error) => {
+    console.error("❌ Failed to login to Discord:", error.message);
+    console.error("Check that DISCORD_TOKEN is set correctly in environment variables");
+  });
