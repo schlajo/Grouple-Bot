@@ -1,11 +1,12 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 const cron = require("node-cron");
 const fs = require("fs");
+const http = require("http");
 const database = require("./database");
 require("dotenv").config();
 
 // Enable selective debug logging (exclude token info)
-process.env.DEBUG = 'discord.js:gateway,discord.js:shard';
+process.env.DEBUG = "discord.js:gateway,discord.js:shard";
 
 // Bot setup
 const client = new Client({
@@ -17,8 +18,15 @@ const client = new Client({
   ],
 });
 
-// Health check server removed - using Background Worker on Render
-// Background Workers don't need HTTP servers
+// HTTP server for Render health checks (Web Service requires a port)
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Grouple Bot is running!");
+});
+server.listen(PORT, () => {
+  console.log(`✅ Health check server running on port ${PORT}`);
+});
 
 // Game state - now per guild
 let guildGames = new Map(); // guildId -> game object
@@ -799,7 +807,7 @@ client.on("messageCreate", async (message) => {
     description += `🔤 **By Word Length**\n`;
     const wordLengths = [3, 4, 5, 6, 7, 8, 9, 10];
     const wordStats = await database.getWordStatsByLength();
-    
+
     for (const length of wordLengths) {
       const solved = stats[`word_length_${length}_solved`];
       const guesses = stats[`word_length_${length}_guesses`];
@@ -807,16 +815,20 @@ client.on("messageCreate", async (message) => {
         description += `• ${length} letters: ${solved} solved (${guesses} guesses) - Avg: ${(
           guesses / solved
         ).toFixed(1)}`;
-        
+
         // Add most/least guessed words if available
         const lengthStats = wordStats[length];
         if (lengthStats) {
           const parts = [];
           if (lengthStats.mostGuesses) {
-            parts.push(`Most: ${lengthStats.mostGuesses.word} (${lengthStats.mostGuesses.guesses})`);
+            parts.push(
+              `Most: ${lengthStats.mostGuesses.word} (${lengthStats.mostGuesses.guesses})`
+            );
           }
           if (lengthStats.leastGuesses) {
-            parts.push(`Least: ${lengthStats.leastGuesses.word} (${lengthStats.leastGuesses.guesses})`);
+            parts.push(
+              `Least: ${lengthStats.leastGuesses.word} (${lengthStats.leastGuesses.guesses})`
+            );
           }
           if (parts.length > 0) {
             description += ` | ${parts.join(", ")}`;
@@ -1009,12 +1021,18 @@ client.on("error", (error) => console.error("Client error:", error));
 client.on("warn", (warning) => console.warn("Client warning:", warning));
 client.on("invalidated", () => console.error("Client session invalidated!"));
 client.on("shardError", (error) => console.error("Shard error:", error));
-client.on("shardDisconnect", (event, id) => console.log("Shard disconnected:", id, event));
+client.on("shardDisconnect", (event, id) =>
+  console.log("Shard disconnected:", id, event)
+);
 client.on("shardReconnecting", (id) => console.log("Shard reconnecting:", id));
 
 // Critical: Monitor IDENTIFY completion
 client.on("debug", (msg) => {
-  if (msg.includes("IDENTIFY") || msg.includes("READY") || msg.includes("hello")) {
+  if (
+    msg.includes("IDENTIFY") ||
+    msg.includes("READY") ||
+    msg.includes("hello")
+  ) {
     console.log("Gateway:", msg);
   }
 });
@@ -1028,10 +1046,13 @@ if (!token) {
 } else {
   // Set a timeout to detect hanging login
   const loginTimeout = setTimeout(() => {
-    console.error("⚠️ Login is taking too long (>30s) - connection may be blocked or token invalid");
+    console.error(
+      "⚠️ Login is taking too long (>30s) - connection may be blocked or token invalid"
+    );
   }, 30000);
 
-  client.login(token)
+  client
+    .login(token)
     .then(() => {
       clearTimeout(loginTimeout);
       console.log("Discord login initiated successfully");
@@ -1044,6 +1065,6 @@ if (!token) {
 }
 
 // Catch any unhandled errors
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });
