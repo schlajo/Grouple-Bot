@@ -5,8 +5,8 @@ const http = require("http");
 const database = require("./database");
 require("dotenv").config();
 
-// Enable debug logging
-process.env.DEBUG = 'discord.js:*';
+// Enable selective debug logging (exclude token info)
+process.env.DEBUG = 'discord.js:gateway,discord.js:shard';
 
 // Bot setup
 const client = new Client({
@@ -1015,16 +1015,21 @@ client.on("messageCreate", async (message) => {
 // Error handling and debug events
 client.on("error", (error) => console.error("Client error:", error));
 client.on("warn", (warning) => console.warn("Client warning:", warning));
-client.on("debug", (info) => console.log("Debug:", info));
 client.on("invalidated", () => console.error("Client session invalidated!"));
 client.on("shardError", (error) => console.error("Shard error:", error));
 client.on("shardDisconnect", (event, id) => console.log("Shard disconnected:", id, event));
 client.on("shardReconnecting", (id) => console.log("Shard reconnecting:", id));
 
+// Critical: Monitor IDENTIFY completion
+client.on("debug", (msg) => {
+  if (msg.includes("IDENTIFY") || msg.includes("READY") || msg.includes("hello")) {
+    console.log("Gateway:", msg);
+  }
+});
+
 // Login
 const token = process.env.DISCORD_TOKEN?.trim();
 console.log("Attempting to connect to Discord...");
-console.log(`Token exists: ${!!token}, Token length: ${token ? token.length : 0}`);
 
 if (!token) {
   console.error("❌ DISCORD_TOKEN environment variable is not set!");
