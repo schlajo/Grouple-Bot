@@ -238,7 +238,7 @@ function formatGuessResult(guess, result, isWinner) {
   }
 
   const emoji = isWinner ? "🏆 " : "";
-  return `${emoji}${letterLine}\n${circlesLine}`; // Newline to put circles below letters
+  return { letterLine: `${emoji}${letterLine}`, circlesLine };
 }
 
 async function startNewGame(guildId, customWord = null) {
@@ -619,7 +619,10 @@ client.on("messageCreate", async (message) => {
     const embed = new EmbedBuilder()
       .setColor(isWinner ? 0xffd700 : 0x0099ff)
       .setTitle(isWinner ? "🏆 Correct!" : "🎯 Guess Result")
-      .setDescription(formatGuessResult(guess, result, isWinner))
+      .setDescription((() => {
+        const { letterLine, circlesLine } = formatGuessResult(guess, result, isWinner);
+        return `${letterLine}\n${circlesLine}`;
+      })())
       .setFooter({
         text: isWinner ? "Congratulations! 🎉" : "Better luck next time!",
       });
@@ -651,11 +654,12 @@ client.on("messageCreate", async (message) => {
             try {
               const user = await client.users.fetch(userId);
               for (const guessData of guessesArray) {
-                description += `${user.username}: ${formatGuessResult(
+                const { letterLine, circlesLine } = formatGuessResult(
                   guessData.guess,
                   guessData.result,
                   guessData.isWinner
-                )}\n`;
+                );
+                description += `${letterLine} by ${user.username}\n${circlesLine}\n`;
               }
             } catch (error) {
               console.error("Error fetching user:", error);
@@ -877,11 +881,12 @@ client.on("messageCreate", async (message) => {
       for (const [userId, guessesArray] of currentGame.guesses) {
         const user = await client.users.fetch(userId);
         for (const guessData of guessesArray) {
-          description += `${user.username}: ${formatGuessResult(
+          const { letterLine, circlesLine } = formatGuessResult(
             guessData.guess,
             guessData.result,
             guessData.isWinner
-          )}\n`;
+          );
+          description += `${letterLine} by ${user.username}\n${circlesLine}\n`;
         }
       }
     }
@@ -923,11 +928,12 @@ client.on("messageCreate", async (message) => {
       for (const [userId, guessesArray] of currentGame.guesses) {
         const user = await client.users.fetch(userId);
         for (const guessData of guessesArray) {
-          description += `${user.username}: ${formatGuessResult(
+          const { letterLine, circlesLine } = formatGuessResult(
             guessData.guess,
             guessData.result,
             guessData.isWinner
-          )}\n`;
+          );
+          description += `${letterLine} by ${user.username}\n${circlesLine}\n`;
         }
       }
     }
