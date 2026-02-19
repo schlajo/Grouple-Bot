@@ -659,7 +659,7 @@ client.on("messageCreate", async (message) => {
                   guessData.result,
                   guessData.isWinner
                 );
-                description += `${letterLine} by ${user.username}\n${circlesLine}\n`;
+                description += `${letterLine}  by ${user.username}\n${circlesLine}\n`;
               }
             } catch (error) {
               console.error("Error fetching user:", error);
@@ -886,7 +886,7 @@ client.on("messageCreate", async (message) => {
             guessData.result,
             guessData.isWinner
           );
-          description += `${letterLine} by ${user.username}\n${circlesLine}\n`;
+          description += `${letterLine}  by ${user.username}\n${circlesLine}\n`;
         }
       }
     }
@@ -933,7 +933,7 @@ client.on("messageCreate", async (message) => {
             guessData.result,
             guessData.isWinner
           );
-          description += `${letterLine} by ${user.username}\n${circlesLine}\n`;
+          description += `${letterLine}  by ${user.username}\n${circlesLine}\n`;
         }
       }
     }
